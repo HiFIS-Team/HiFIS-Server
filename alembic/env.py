@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.models import branch as _branch  # noqa: F401
 from app.models import reservation as _reservation  # noqa: F401
 from app.models import membership_pass as _membership_pass  # noqa: F401
+from app.models import pt_pass as _pt_pass  # noqa: F401 
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
