@@ -1,0 +1,20 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
+    HIFIS_DB_USER: str
+    HIFIS_DB_PASSWORD: str
+    HIFIS_DB_NAME: str
+    HIFIS_DB_HOST: str
+    HIFIS_DB_PORT: int
+
+    @property
+    def DATABASE_URL(self) -> str:
+        return (
+            f"postgresql+psycopg2://{self.HIFIS_DB_USER}:{self.HIFIS_DB_PASSWORD}"
+            f"@{self.HIFIS_DB_HOST}:{self.HIFIS_DB_PORT}/{self.HIFIS_DB_NAME}"
+        )
+    
+settings = Settings()
+
