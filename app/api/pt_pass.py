@@ -1,0 +1,47 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
+
+from app.db.deps import get_db
+from app.schemas.pt_pass import PTPassCreate, PTPassUpdate, PTPassResponse
+from app.services import pt_pass as pt_pass_service
+
+# Public - PT 신청서에서 지점별 수강권 목록 자동 로드 (인증 불필요)
+public_router = APIRouter(prefix="/pt-passes", tags=["pt-passes"])
+
+@public_router.get("", response_model=list[PTPassResponse])
+def list_pt_passes(
+    branch_id: UUID = Query(..., description="지점 ID"),
+    db: Session = Depends(get_db),
+):
+    """지점별 수강권 목록 조회 (Public, branch_id 필수)"""
+    return pt_pass_service.list_pt_passes(db, branch_id=branch_id)
+
+# Admin - 인증 의존성은 인증 도입 후 부착
+admin_router = APIRouter(prefix="/admin/pt-passes", tags=["admin-pt-passes"])
+
+@admin_router.get("", response_model=list[PTPassResponse])
+def admin_list_pt_passes(
+    branch_id: UUID | None = None,
+    db: Session = Depends(get_db),
+):
+    """수강권 목록 조회 (Admin) - branch_id 옵션 필터"""
+    return pt_pass_service.list_pt_passes(db, branch_id=branch_id)
+
+@admin_router.post("", response_model=PTPassResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_pt_pass(
+    payload: PTPassCreate,
+    db: Session = Depends(get_db),
+):
+    """수강권 등록 (Admin)"""
+    return pt_pass_service.create_pt_pass(db, payload)
+
+@admin_router.patch("/{pass_id}", response_model=PTPassResponse)
+def admin_update_pt_pass(
+    pass_id: UUID,
+    payload: PTPassUpdate,
+    db: Session = Depends(get_db),
+):
+    """수강권 수정 (Admin, 부분 수정)"""
+    return pt_pass_service.update_pt_pass(db, pass_id, payload)
