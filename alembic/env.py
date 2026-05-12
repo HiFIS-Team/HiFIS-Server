@@ -12,6 +12,7 @@ from app.core.config import settings
 # 새 도메인 추가할 때마다 이곳에 한 줄씩 추가
 from app.models import branch as _branch  # noqa: F401
 from app.models import reservation as _reservation  # noqa: F401
+from app.models import membership_pass as _membership_pass  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
