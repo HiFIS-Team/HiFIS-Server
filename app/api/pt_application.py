@@ -1,0 +1,53 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+
+from app.db.deps import get_db
+from app.schemas.pt_application import (
+    PTApplicationCreate,
+    PTApplicationResponse,
+    PTApplicationUpdate,
+)
+from app.services import pt_application as pt_application_service
+
+# Public - PT 신청서 제출 (인증 불필요)
+public_router = APIRouter(prefix="/pt-applications", tags=["pt-applications"])
+
+@public_router.post("", response_model=PTApplicationResponse, status_code=status.HTTP_201_CREATED)
+def create_pt_application(
+    payload: PTApplicationCreate,
+    db: Session = Depends(get_db),
+):
+    """PT 신청서 생성 (Public)"""
+    return pt_application_service.create_pt_application(db, payload)
+
+# Admin - 인증 의존성은 인증 도입 후 부착
+admin_router = APIRouter(prefix="/admin/pt-applications", tags=["admin-pt-applications"])
+
+@admin_router.get("", response_model=list[PTApplicationResponse])
+def admin_list_pt_application(
+    branch_id: UUID | None = None,
+    db: Session = Depends(get_db),
+):
+    """PT 신청 목록 조회 (Admin) - branch_id 옵션 필터"""
+    return pt_application_service.list_pt_applications(db, branch_id=branch_id)
+
+@admin_router.get("/{application_id}", response_model=PTApplicationResponse)
+def admin_get_pt_application(
+    application_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """PT 신청 상세 조회 (Admin)"""
+    return pt_application_service.get_pt_application(db, application_id)
+
+@admin_router.patch("/{application_id}", response_model=PTApplicationResponse)
+def admin_update_pt_application(
+    application_id: UUID,
+    payload: PTApplicationUpdate,
+    db: Session = Depends(get_db),
+):
+    """PT 신청 정보 수정 (Admin, 부분 수정)"""
+    return pt_application_service.update_pt_application(
+        db, application_id, payload,
+    )
