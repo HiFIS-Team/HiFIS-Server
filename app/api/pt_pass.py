@@ -18,7 +18,7 @@ def list_pt_passes(
     db: Session = Depends(get_db),
 ):
     """지점별 수강권 목록 조회 (Public, branch_id 필수)"""
-    return pt_pass_service.list_pt_passes(db, branch_id=branch_id)
+    return pt_pass_service.list_pt_passes_public(db, branch_id)
 
 admin_router = APIRouter(prefix="/admin/pt-passes", tags=["admin-pt-passes"])
 

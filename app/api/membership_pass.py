@@ -14,7 +14,7 @@ from app.schemas.membership_pass import (
 from app.services import membership_pass as membership_pass_service
 
 # Public - 회원가입 신청서에서 지점별 회원권 목록 자동 로드
-public_router = APIRouter(prefix="/mombership-passes", tags=["membership-passes"])
+public_router = APIRouter(prefix="/membership-passes", tags=["membership-passes"])
 
 @public_router.get("", response_model=list[MembershipPassResponse])
 def list_membership_passes(
@@ -22,7 +22,7 @@ def list_membership_passes(
     db: Session = Depends(get_db),
 ):
     """지점별 회원권 목록 조회 (Public, branch_id 필수)"""
-    return membership_pass_service.list_membership_passes(db, branch_id)
+    return membership_pass_service.list_membership_passes_public(db, branch_id)
 
 # Admin - 인증 의존성은 인증 도입 후 부착
 admin_router = APIRouter(prefix="/admin/membership-passes", tags=["admin-membership-passes"])
