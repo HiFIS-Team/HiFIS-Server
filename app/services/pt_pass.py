@@ -3,6 +3,8 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import assert_branch_access, resolve_branch_filter
+from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.pt_pass import PTPass
 from app.schemas.pt_pass import PTPassCreate, PTPassUpdate
@@ -16,8 +18,9 @@ def _ensure_branch_exists(db: Session, branch_id: UUID) -> None:
             detail="존재하지 않는 지점입니다."
         )
     
-def create_pt_pass(db: Session, data: PTPassCreate) -> PTPass:
+def create_pt_pass(db: Session, data: PTPassCreate, current_admin: Admin) -> PTPass:
     """수강권 등록 - 지점 존재 검증 후 저장"""
+    assert_branch_access(current_admin, data.branch_id)
     _ensure_branch_exists(db, data.branch_id)
 
     pass_obj = PTPass(
@@ -31,11 +34,26 @@ def create_pt_pass(db: Session, data: PTPassCreate) -> PTPass:
     db.refresh(pass_obj)
     return pass_obj
 
-def list_pt_passes(db: Session, branch_id: UUID | None = None) -> list[PTPass]:
-    """수강권 목록 조회 - branch_id 주면 해당 지점만, 없으면 전체"""
+def list_pt_passes_public(db: Session, branch_id: UUID) -> list[PTPass]:
+    """Public 조회 - branch_id 필수"""
+    return (
+        db.query(PTPass)
+        .filter(PTPass.branch_id == branch_id)
+        .order_by(PTPass.created_at.asc())
+        .all()
+    )
+
+def list_pt_passes(
+    db: Session,
+    branch_id: UUID | None,
+    current_admin: Admin,
+) -> list[PTPass]:
+    """Admin 조회 - FC는 자기 지점 강제"""
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+
     query = db.query(PTPass)
-    if branch_id is not None:
-        query = query.filter(PTPass.branch_id == branch_id)
+    if effective_branch_id is not None:
+        query = query.filter(PTPass.branch_id == effective_branch_id)
     return query.order_by(PTPass.created_at.asc()).all()
 
 def get_pt_pass(db: Session, pass_id: UUID) -> PTPass:
@@ -48,9 +66,10 @@ def get_pt_pass(db: Session, pass_id: UUID) -> PTPass:
         )
     return pass_obj
 
-def update_pt_pass(db: Session, pass_id: UUID, data: PTPassUpdate) -> PTPass:
+def update_pt_pass(db: Session, pass_id: UUID, data: PTPassUpdate, current_admin: Admin,) -> PTPass:
     """수강권 정보 수정 (부분 수정)"""
     pass_obj = get_pt_pass(db, pass_id)
+    assert_branch_access(current_admin, pass_obj.branch_id)
 
     if data.name is not None:
         pass_obj.name = data.name

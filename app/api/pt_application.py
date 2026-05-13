@@ -3,6 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_admin
+from app.models.admin import Admin
 from app.db.deps import get_db
 from app.schemas.pt_application import (
     PTApplicationCreate,
@@ -29,25 +31,28 @@ admin_router = APIRouter(prefix="/admin/pt-applications", tags=["admin-pt-applic
 def admin_list_pt_application(
     branch_id: UUID | None = None,
     db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
 ):
     """PT 신청 목록 조회 (Admin) - branch_id 옵션 필터"""
-    return pt_application_service.list_pt_applications(db, branch_id=branch_id)
+    return pt_application_service.list_pt_applications(db, branch_id, current_admin)
 
 @admin_router.get("/{application_id}", response_model=PTApplicationResponse)
 def admin_get_pt_application(
     application_id: UUID,
     db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
 ):
     """PT 신청 상세 조회 (Admin)"""
-    return pt_application_service.get_pt_application(db, application_id)
+    return pt_application_service.get_pt_application(db, application_id, current_admin)
 
 @admin_router.patch("/{application_id}", response_model=PTApplicationResponse)
 def admin_update_pt_application(
     application_id: UUID,
     payload: PTApplicationUpdate,
     db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
 ):
     """PT 신청 정보 수정 (Admin, 부분 수정)"""
     return pt_application_service.update_pt_application(
-        db, application_id, payload,
+        db, application_id, payload, current_admin
     )

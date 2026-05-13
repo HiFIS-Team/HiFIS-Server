@@ -4,6 +4,8 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import assert_branch_access, resolve_branch_filter
+from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.pt_application import PTApplication
 from app.models.pt_pass import PTPass
@@ -69,14 +71,16 @@ def create_pt_application(db: Session, data: PTApplicationCreate) -> PTApplicati
     )
     return application
 
-def list_pt_applications(db: Session, branch_id: UUID | None = None) -> list[PTApplication]:
+def list_pt_applications(db: Session, branch_id: UUID | None, current_admin: Admin,) -> list[PTApplication]:
     """PT 신청 목록 조회 - branch_id 주면 해당 지점만"""
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+
     query = db.query(PTApplication)
-    if branch_id is not None:
-        query = query.filter(PTApplication.branch_id == branch_id)
+    if effective_branch_id is not None:
+        query = query.filter(PTApplication.branch_id == effective_branch_id)
     return query.order_by(PTApplication.created_at.desc()).all()
 
-def get_pt_application(db: Session, application_id: UUID) -> PTApplication:
+def get_pt_application(db: Session, application_id: UUID, current_admin: Admin,) -> PTApplication:
     """단일 PT 신청 조회 - 없으면 404"""
     application = db.query(PTApplication).filter(
         PTApplication.id == application_id
@@ -84,13 +88,19 @@ def get_pt_application(db: Session, application_id: UUID) -> PTApplication:
     if application is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 PT 신청입니다."
+            detail="존재하지 않는 PT 신청입니다.",
         )
+    assert_branch_access(current_admin, application.branch_id)   # ← 추가
     return application
 
-def update_pt_application(db: Session, application_id: UUID, data: PTApplicationUpdate) -> PTApplication:
+def update_pt_application(
+    db: Session, 
+    application_id: UUID, 
+    data: PTApplicationUpdate, 
+    current_admin: Admin
+) -> PTApplication:
     """PT 신청 정보 수정 (Admin, 부분 수정)"""
-    application = get_pt_application(db, application_id)
+    application = get_pt_application(db, application_id, current_admin)
 
     if data.pt_pass_id is not None:
         _ensure_pt_pass_match(db, data.pt_pass_id, application.branch_id)
@@ -125,7 +135,15 @@ def update_pt_application(db: Session, application_id: UUID, data: PTApplication
 
 def update_pt_application_status(db: Session, application_id: UUID, data: PTApplicationStatusUpdate) -> PTApplication:
     """PT 신청 상태 변경 (Internal, 스케줄러 전용)"""
-    application = get_pt_application(db, application_id)
+    application = db.query(PTApplication).filter(
+        PTApplication.id == application_id
+    ).first()
+
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 PT 신청입니다.",
+        )
     application.status = data.status.value
     db.commit()
     db.refresh(application)

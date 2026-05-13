@@ -3,6 +3,8 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import assert_branch_access, resolve_branch_filter
+from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.membership_pass import MembershipPass
 from app.schemas.membership_pass import MembershipPassCreate, MembershipPassUpdate
@@ -17,8 +19,9 @@ def _ensure_branch_exists(db: Session, branch_id: UUID) -> None:
             detail="존재하지 않는 지점입니다."
         )
 
-def create_membership_pass(db: Session, data: MembershipPassCreate) -> MembershipPass:
+def create_membership_pass(db: Session, data: MembershipPassCreate, current_admin: Admin) -> MembershipPass:
     """회원권 등록 - 지점 존재 검증 후 저장"""
+    assert_branch_access(current_admin, data.branch_id)
     _ensure_branch_exists(db, data.branch_id)
 
     pass_obj = MembershipPass(
@@ -32,11 +35,29 @@ def create_membership_pass(db: Session, data: MembershipPassCreate) -> Membershi
     db.refresh(pass_obj)
     return pass_obj
 
-def list_membership_passes(db: Session, branch_id: UUID | None = None) -> list[MembershipPass]:
-    """회원권 목록 조회 - branch_id 주면 해당 지점만, 없으면 전체"""
+def list_membership_passes_public(
+        db: Session, 
+        branch_id: UUID | None,
+) -> list[MembershipPass]:
+    """Public 조회 - branch_id 필수"""
+    return (
+        db.query(MembershipPass)
+        .filter(MembershipPass.branch_id == branch_id)
+        .order_by(MembershipPass.created_at.asc())
+        .all()
+    )
+
+def list_membership_passes(
+        db: Session, 
+        branch_id: UUID | None,
+        current_admin: Admin,
+) -> list[MembershipPass]:
+    """Admin 조회 - FC는 자기 지점 강제"""
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+
     query = db.query(MembershipPass)
-    if branch_id is not None:
-        query = query.filter(MembershipPass.branch_id == branch_id)
+    if effective_branch_id is not None:
+        query = query.filter(MembershipPass.branch_id == effective_branch_id)
     return query.order_by(MembershipPass.created_at.asc()).all()
 
 def get_membership_pass(db: Session, pass_id: UUID) -> MembershipPass:
@@ -49,9 +70,15 @@ def get_membership_pass(db: Session, pass_id: UUID) -> MembershipPass:
         )
     return pass_obj
 
-def update_membership_pass(db: Session, pass_id: UUID, data: MembershipPassUpdate) -> MembershipPass:
+def update_membership_pass(
+        db: Session, 
+        pass_id: UUID, 
+        data: MembershipPassUpdate,
+        current_admin: Admin,
+) -> MembershipPass:
     """회원권 정보 수정 (부분 수정)"""
     pass_obj = get_membership_pass(db, pass_id)
+    assert_branch_access(current_admin, pass_obj.branch_id)
 
     if data.name is not None:
         pass_obj.name = data.name

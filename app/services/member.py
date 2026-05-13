@@ -4,6 +4,8 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import assert_branch_access, resolve_branch_filter
+from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.member import Member
 from app.models.membership_pass import MembershipPass
@@ -69,26 +71,36 @@ def create_member(db: Session, data: MemberCreate) -> Member:
     )
     return member
 
-def list_members(db: Session, branch_id: UUID | None = None) -> list[Member]:
-    """회원 목록 조회 - branch_id 주면 해당 지점만"""
+def list_members(
+        db: Session, 
+        branch_id: UUID | None,
+        current_admin: Admin,
+) -> list[Member]:
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+
     query = db.query(Member)
-    if branch_id is not None:
-        query = query.filter(Member.branch_id == branch_id)
+    if effective_branch_id is not None:
+        query = query.filter(Member.branch_id == effective_branch_id)
     return query.order_by(Member.created_at.desc()).all()
 
-def get_member(db: Session, member_id: UUID) -> Member:
-    """단일 화원 조회 - 없으면 404"""
+def get_member(db: Session, member_id: UUID, current_admin: Admin) -> Member:
     member = db.query(Member).filter(Member.id == member_id).first()
     if member is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="존재하지 않는 회원입니다."
         )
+    assert_branch_access(current_admin, member.branch_id) 
     return member
 
-def update_member(db: Session, member_id: UUID, data: MemberUpdate) -> Member:
+def update_member(
+    db: Session, 
+    member_id: UUID, 
+    data: MemberUpdate, 
+    current_admin: Admin        
+) -> Member:
     """회원 정보 수정 (Admin, 부분 수정)"""
-    member = get_member(db, member_id)
+    member = get_member(db, member_id, current_admin)
 
     if data.membership_pass_id is not None:
         _ensure_membership_pass_match(
@@ -129,7 +141,12 @@ def update_member(db: Session, member_id: UUID, data: MemberUpdate) -> Member:
 
 def update_member_status(db: Session, member_id: UUID, data: MemberStatusUpdate) -> Member:
     """회원 상태 변경 (Internal, 스케줄러 전용)"""
-    member = get_member(db, member_id)
+    member = db.query(Member).filter(Member.id == member_id).first()
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 회원입니다.",
+        )
     member.status = data.status.value
     db.commit()
     db.refresh(member)

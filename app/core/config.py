@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     HIFIS_DB_HOST: str
     HIFIS_DB_PORT: int
 
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 480
+
     @property
     def DATABASE_URL(self) -> str:
         return (
