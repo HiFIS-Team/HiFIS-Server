@@ -42,6 +42,26 @@ class MemberStatus(str, Enum):
     REGISTERED = "REGISTERED"
     EXPIRED = "EXPIRED"
 
+class TriggerType(str, Enum):
+    """알림톡 발송 트리거"""
+    RESERVATION_CONFIRM = "RESERVATION_CONFIRM"
+    REGISTERED = "REGISTERED"
+    D_PLUS_3 = "D_PLUS_3"
+    D_PLUS_7 = "D_PLUS_7"
+    D_PLUS_30 = "D_PLUS_30"
+    EXPIRY_SOON = "EXPIRY_SOON"
+
+class MessageStatus(str, Enum):
+    """알림톡 발송 결과"""
+    SUCCESS = "SUCCESS"
+    FAIL = "FAIL"
+
+class MessageSourceType(str, Enum):
+    """알림톡 발생 출처"""
+    MEMBER = "MEMBER"
+    PT_APPLICATION = "PT_APPLICATION"
+    RESERVATION = "RESERVATION"    
+
 # === 한국어 라벨 매핑 (프론트 표시용) ===
 
 GENDER_LABELS: dict[Gender, str] = {
