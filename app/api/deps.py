@@ -54,3 +54,19 @@ def require_super_admin(current_admin: Admin = Depends(get_current_admin)) -> Ad
             detail="SUPER_ADMIN 권한이 필요합니다.",
         )
     return current_admin
+
+# === 권한 분기 헬퍼 (services에서 호출) ===
+
+def resolve_branch_filter(admin: Admin, requested_branch_id: UUID | None) -> UUID | None:
+    """록록 조회용 - FC는 자기 지점 강제, SUPER_ADMIN은 요청값 그대로"""
+    if admin.role == AdminRole.FC.value:
+        return admin.branch_id
+    return requested_branch_id
+
+def assert_branch_access(admin: Admin, branch_id: UUID) -> None:
+    """상세/수저용 - FC가 다른 지점 데이터 접근 시 404 (정보 노출 최소화)"""
+    if admin.role == AdminRole.FC.value and admin.branch_id != branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않습니다.",
+        )
