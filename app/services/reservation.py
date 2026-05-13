@@ -4,6 +4,8 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import resolve_branch_filter
+from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.reservation import Reservation
 from app.schemas.reservation import ReservationCreate
@@ -12,7 +14,7 @@ from app.utils.masking import mask_phone
 logger = logging.getLogger(__name__)
 
 def create_reservation(db: Session, data: ReservationCreate) -> Reservation:
-    """예약 신청 생성 - 지점 존재 검증 후 저장"""
+    """예약 신청 생성 - 지점 존재 검증 후 저장 (Public)"""
     branch = db.query(Branch).filter(Branch.id == data.branch_id).first()
     if branch is None:
         raise HTTPException(
@@ -37,9 +39,11 @@ def create_reservation(db: Session, data: ReservationCreate) -> Reservation:
     )
     return reservation
 
-def list_reservation(db: Session, branch_id: UUID | None = None) -> list[Reservation]:
-    """예약 목록 조회 (Admin) - branch_id 주면 해당 지점만, 없으면 전체"""
+def list_reservation(db: Session, branch_id: UUID | None, current_admin: Admin) -> list[Reservation]:
+    """예약 목록 조회 FC는 자기 지점 강제, SUPER_ADMIN은 옵션 필터"""
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+
     query = db.query(Reservation)
     if branch_id is not None:
-        query = query.filter(Reservation.branch_id == branch_id)
+        query = query.filter(Reservation.branch_id == effective_branch_id)
     return query.order_by(Reservation.created_at.desc()).all()
