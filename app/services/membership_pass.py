@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.member import Member
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
@@ -90,3 +91,17 @@ def update_membership_pass(
     db.commit()
     db.refresh(pass_obj)
     return pass_obj
+
+def delete_membership_pass(db: Session, pass_id: UUID, current_admin: Admin) -> None:
+    """회원권 삭제 (Admin, 하드 삭제) - FC는 자기 지점만, 사용 중이면 거부"""
+    pass_obj = get_membership_pass(db, pass_id)
+    assert_branch_access(current_admin, pass_obj.branch_id)
+
+    in_use = db.query(Member).filter(Member.membership_pass_id == pass_id).first()
+    if in_use is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이 회원권을 사용 중인 회원이 있어 삭제할 수 없습니다.",
+        )
+    db.delete(pass_obj)
+    db.commit()
