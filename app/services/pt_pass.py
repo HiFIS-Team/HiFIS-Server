@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.pt_application import PTApplication
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
@@ -82,4 +83,17 @@ def update_pt_pass(db: Session, pass_id: UUID, data: PTPassUpdate, current_admin
     db.refresh(pass_obj)
     return pass_obj
 
+def delete_pt_pass(db: Session, pass_id: UUID, current_admin: Admin) -> None:
+    """수강권 삭제 (Admin, 하드 삭제) - FC는 자기 지점만, 사용 중이면 거부"""
+    pass_obj = get_pt_pass(db, pass_id)
+    assert_branch_access(current_admin, pass_obj.branch_id)
+
+    in_use = db.query(PTApplication).filter(PTApplication.pt_pass_id == pass_id).first()
+    if in_use is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이 수강권을 사용 중인 PT 신청이 있어 삭제할 수 없습니다.",
+        )
+    db.delete(pass_obj)
+    db.commit()
 
