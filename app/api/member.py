@@ -47,3 +47,12 @@ def admin_update_member(
 ):
     """회원 정보 수정 (Admin, 부분 수정)"""
     return member_service.update_member(db, member_id, payload, current_admin)
+
+@admin_router.delete("/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_member(
+    member_id: UUID,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """회원 삭제 (Admin) - FC는 자기 지점만"""
+    member_service.delete_member(db, member_id, current_admin)

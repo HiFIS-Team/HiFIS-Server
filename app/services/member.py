@@ -170,4 +170,11 @@ def update_member_status(db: Session, member_id: UUID, data: MemberStatusUpdate)
     db.commit()
     db.refresh(member)
     return member
+
+def delete_member(db: Session, member_id: UUID, current_admin: Admin) -> None:
+    """회원 삭제 (Admin, 하드 삭제) - FC는 자기 지점만"""
+    member = get_member(db, member_id, current_admin)
+    db.delete(member)
+    db.commit()
+    logger.info("회원 삭제 완료: member_id=%s", member_id)
     
