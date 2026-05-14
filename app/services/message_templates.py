@@ -1,115 +1,109 @@
-"""트리거별 알림톡 고정 양식 - {name}/{branch_name} 치환 (B안: 통일 헤더)"""
+"""트리거별 알림톡 고정 양식 - 이름·지점정보 치환 (B안: 통일 헤더)"""
 from app.schemas.enums import TriggerType
 
 # 모든 양식 공통 헤더 (B안 통일 인사말)
 _HEADER = "{name}님 {branch_name} 입니다!"
 
-# 모든 양식 공통 푸터 - 전화/링크는 추후 Branch 컬럼으로 분리 예정 (현재 동광주 하드코딩)
-_FOOTER = """🚩{branch_name}
-[상담문의]
-📞010-2540-9678
-[카카오 문의]
-📲https://open.kakao.com/o/sBmoTipi
-[네이버 플레이스]
-https://naver.me/59vYWl7m"""
-
-# 트리거별 본문 (헤더/푸터 제외) - 원본 양식에서 인사말 줄 제거
+# 트리거별 본문 (헤더/푸터 제외) - 문장·줄바꿈·중복 정리, 사실 정보는 원본 유지
 _BODIES: dict[str, str] = {
-    TriggerType.RESERVATION_CONFIRM.value: """오늘 오후 ㅇㅇ시 예약이세요.
-변동사항 있으시면 미리 말씀해
-주시면 예약변경 도와드리겠습니다.
-방문하셔서 상세하게 안내 도와
-드리겠습니다. 조심해서 오세요^^
+    TriggerType.RESERVATION_CONFIRM.value: """예약이 정상적으로 접수되었습니다.
+변동사항이 있으시면 미리 말씀해 주세요. 예약 변경 도와드리겠습니다.
+방문하시면 상세하게 안내해 드리겠습니다. 조심해서 오세요^^
 
 [골든타임 이벤트]
-당일 등록시 10% 할인적용
+당일 등록 시 10% 할인적용
 7일 이내 등록 시 5% 할인적용
-이후 등록 정상가 적용""",
+이후 등록 시 정상가 적용""",
 
-    TriggerType.RESERVATION_CHECK_1.value: """지난번 방문하셔서 상담하셨던
-골든타임 이벤트 적용기간이
-4일 남았는데, 혹시 등록 아직
-고민 중에 있으신가요?🙂""",
+    TriggerType.RESERVATION_CHECK_1.value: """지난번 상담받으셨던 골든타임 이벤트, 적용 기간이 4일 남았어요.
+혹시 등록 아직 고민 중이신가요?🙂""",
 
-    TriggerType.RESERVATION_CHECK_2.value: """지난번 방문하셔서 상담하셨던
-골든타임 이벤트 적용기간이
-내일이 마감일인데, 마감 후에는
-정상가로만 구매 가능합니다.
-혹시 등록 아직 고민 중에
-있으신가요?🙂""",
+    TriggerType.RESERVATION_CHECK_2.value: """지난번 상담받으셨던 골든타임 이벤트, 내일이 마감일이에요.
+마감 후에는 정상가로만 등록 가능합니다.
+혹시 등록 아직 고민 중이신가요?🙂""",
 
-    TriggerType.REGISTERED.value: """인생에 모든 순간이 선택의 순간이라고 생각합니다. [피트니스스타] 를 선택하심에 진심으로 감사드립니다. 회원님의 하루 운동이 가족과 함께할 수 있는 시간을 늘립니다.항상 회원님의 가정에 행복한 일들만 함께하시길 기원하겠습니다.""",
+    TriggerType.REGISTERED.value: """인생의 모든 순간이 선택의 순간이라고 생각합니다. 저희를 선택해 주셔서 진심으로 감사드립니다.
+회원님의 하루 운동이 가족과 함께할 수 있는 시간을 늘려줍니다. 항상 회원님 가정에 행복한 일들만 가득하시길 기원하겠습니다.""",
 
-    TriggerType.D_PLUS_7.value: """축하드려요! 벌써 새로운 결심을 하신지 일주일이 지났어요. 운동은 처음 한달이 중요합니다. 언제든 도와드릴 내용이 있으시면 편하게 연락주세요. 오늘도 행복한 하루 보내세요^^""",
+    TriggerType.D_PLUS_7.value: """축하드려요! 새로운 결심을 하신 지 벌써 일주일이 지났어요.
+운동은 처음 한 달이 가장 중요합니다. 도와드릴 일이 있으면 언제든 편하게 연락 주세요.
+오늘도 행복한 하루 보내세요^^""",
 
-    TriggerType.D_PLUS_14.value: """대단하세요! 벌써 2주나 되셨어요! 이용하시면서 도와드릴 사항이 있으시면 언제든 편하게 연락주세요! 오늘도 행복한 하루 보내세요^^""",
+    TriggerType.D_PLUS_14.value: """대단하세요! 벌써 2주차예요!
+이용하시면서 불편하거나 도와드릴 일이 있으면 언제든 편하게 연락 주세요.
+오늘도 행복한 하루 보내세요^^""",
 
-    TriggerType.D_PLUS_30.value: """한달이 모여 1년이 됩니다. 벌써 한달이라는 시간이 지났어요. 회원님의 하루 운동이 가족과 함께 하는 시간을 늘려줍니다. 앞으로도 꾸준히 건강한 하루 보내실 수 있도록 피트니스스타가 최선을 다해서 돕겠습니다. 오늘도 행복한 하루 보내세요^^""",
+    TriggerType.D_PLUS_30.value: """벌써 한 달이 지났어요. 한 달이 모여 일 년이 됩니다.
+지금처럼 꾸준히 건강한 하루 보내실 수 있도록 피트니스스타가 최선을 다해 돕겠습니다.
+오늘도 행복한 하루 보내세요^^""",
 
-    TriggerType.EXPIRY_SOON_5.value: """회원님 잔여 기간 얼마 남지 않아,
-[리스타트 이벤트] 안내 드립니다.
-혜택 기간 내 방문 권장드립니다.
-
-[리스타트 이벤트]
-만료 전 재등록 시 10%할인
-만료 후 당월 재등록 5% 할인
-만료 후 익월 재등록 정상가""",
-
-    TriggerType.EXPIRY_SOON_2.value: """[리스타트 이벤트] 혜택기간
-내일까지셔서 재안내 드립니다.
-기간 종료 후 할인율이 줄어듭니다.
-방문 일정 알려주시면 친절히
-안내 도와드리겠습니다.
+    TriggerType.EXPIRY_SOON_5.value: """이용 기간이 얼마 남지 않아 [리스타트 이벤트] 안내드립니다.
+혜택 기간 내에 방문하시는 걸 권장드려요.
 
 [리스타트 이벤트]
-만료 전 재등록 시 10%할인
-만료 후 당월 재등록 5% 할인
-만료 후 익월 재등록 정상가""",
+만료 전 재등록 시 10% 할인
+만료 후 당월 재등록 시 5% 할인
+만료 후 익월 재등록 시 정상가""",
 
-    TriggerType.EXPIRED_TODAY.value: """[리스타트 이벤트] 2차 혜택기간
-당월 까지셔서 재안내 드립니다.
-기간 종료 후 정상가로 구매가
-가능합니다. 방문 일정 알려주시면
-친절히 안내 도와드리겠습니다.
+    TriggerType.EXPIRY_SOON_2.value: """[리스타트 이벤트] 혜택 기간이 내일까지여서 다시 안내드립니다.
+기간이 종료되면 할인율이 줄어듭니다.
+방문 일정 알려주시면 친절히 안내 도와드리겠습니다.
 
 [리스타트 이벤트]
-만료 후 당월 재등록 5% 할인
-만료 후 익월 재등록 정상가""",
+만료 전 재등록 시 10% 할인
+만료 후 당월 재등록 시 5% 할인
+만료 후 익월 재등록 시 정상가""",
 
-    TriggerType.EXPIRED_FOLLOWUP.value: """운동은 쉬는 기간이 길어질수록
-다시 시작하기 더 어려워집니다.
+    TriggerType.EXPIRED_TODAY.value: """[리스타트 이벤트] 2차 혜택 기간이 이번 달까지여서 다시 안내드립니다.
+기간이 종료되면 정상가로만 등록 가능합니다.
+방문 일정 알려주시면 친절히 안내 도와드리겠습니다.
 
-패턴을 잃어버리시기 전에 다시
-무리 없이 리듬을 되찾으실 수
-있도록 도와드리겠습니다.
+[리스타트 이벤트]
+만료 후 당월 재등록 시 5% 할인
+만료 후 익월 재등록 시 정상가""",
+
+    TriggerType.EXPIRED_FOLLOWUP.value: """운동은 쉬는 기간이 길어질수록 다시 시작하기 더 어려워집니다.
+패턴을 잃기 전에, 무리 없이 리듬을 되찾으실 수 있도록 도와드리겠습니다.
 언제든 편하게 연락 주세요🙂
 
 [회복 리턴 패키지]
-문자 수신 후 5일 이내 10% 할인
-리턴 건강체크 서비스(스케쥴 예약제)""",
+문자 수신 후 5일 이내 등록 시 10% 할인
+리턴 건강체크 서비스 (스케줄 예약제)""",
 
     TriggerType.EVENT.value: """(리뉴얼 이벤트) 안내드립니다.
-4월 한정 선착순 이벤트로
-단 1개월만 등록하셔도
-4만원으로 따뜻한 봄날
-가볍게 건강관리 시작하세요.
+4월 한정 선착순 이벤트로, 단 1개월만 등록하셔도 4만원!
+따뜻한 봄날, 가볍게 건강관리 시작해 보세요.
 
 [바른 봄날 패키지]
->개월 상관없이 4만원 등록 가능
-> 시작일 설정 자유롭게 가능
-> 일일 무제한 입장 가능
-> 담당 트레이너 배정 PT1회""",
+개월 수 상관없이 4만원 등록 가능
+시작일 자유롭게 설정 가능
+일일 무제한 입장 가능
+담당 트레이너 배정 + PT 1회""",
 }
 
-# 헤더 + 본문 + 푸터 결합 → 최종 양식
-TEMPLATES: dict[str, str] = {
-    trigger: f"{_HEADER}\n\n{body}\n\n{_FOOTER}"
-    for trigger, body in _BODIES.items()
-}
+def _build_footer(
+    branch_name: str, branch_phone: str, naver_place_url: str | None
+) -> str:
+    """지점별 푸터 생성 - 네이버 링크는 있을 때만 표시 (카카오는 추후 추가 예정)"""
+    lines = [
+        f"🚩{branch_name}",
+        "[상담문의]",
+        f"📞{branch_phone}",
+    ]
+    if naver_place_url:
+        lines.append("[네이버 플레이스]")
+        lines.append(naver_place_url)
+    return "\n".join(lines)
 
-def render_message(trigger: str, name: str, branch_name: str) -> str:
-    """트리거 양식에 이름·지점명 치환 - 미정의 트리거는 헤더+기본 인사문 폴백"""
-    template = TEMPLATES.get(trigger)
-    if template is None:
-        template = f"{_HEADER}\n\n안녕하세요, 반갑습니다 :)\n\n{_FOOTER}"
-    return template.replace("{name}", name).replace("{branch_name}", branch_name)
+def render_message(
+    trigger: str,
+    name: str,
+    branch_name: str,
+    branch_phone: str,
+    naver_place_url: str | None = None,
+) -> str:
+    """트리거 양식에 이름·지점정보 치환 - 미정의 트리거는 기본 인사문 폴백"""
+    body = _BODIES.get(trigger, "안녕하세요, 반갑습니다 :)")
+    header = _HEADER.replace("{name}", name).replace("{branch_name}", branch_name)
+    footer = _build_footer(branch_name, branch_phone, naver_place_url)
+    return f"{header}\n\n{body}\n\n{footer}"
