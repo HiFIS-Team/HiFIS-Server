@@ -10,8 +10,8 @@ from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
 
-def send_sms(recipient: str, content: str) -> tuple[bool, str | None]:
-    """SMS 발송 - (성공여부, 에러메시지) 반환. 최대 3회 재시도."""
+def send_sms(recipient: str, content: str, subject: str = "") -> tuple[bool, str | None]:
+    """SMS/LMS 발송 - (성공여부, 에러메시지) 반환. 최대 3회 재시도."""
     client = SolapiMessageService(
         api_key=settings.SOLAPI_API_KEY,
         api_secret=settings.SOLAPI_API_SECRET,
@@ -20,6 +20,7 @@ def send_sms(recipient: str, content: str) -> tuple[bool, str | None]:
         from_=settings.SOLAPI_SENDER,
         to=recipient,
         text=content,
+        subject=subject,
     )
 
     last_error = None
