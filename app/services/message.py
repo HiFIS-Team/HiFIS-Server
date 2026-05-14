@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def send_message(db: Session, data: MessageSendRequest) -> Message:
     """알림톡 발송 흐름: 지점 조회 → 양식 렌더링 → Solapi 발송 → 이력 저장"""
-    # 1. 지점 조회 (branch_id 검증용)
+    # 1. 지점 조회 (branch_name 치환 + branch_id 검증)
     branch = db.query(Branch).filter(Branch.id == data.branch_id).first()
     if branch is None:
         raise HTTPException(
@@ -24,14 +24,15 @@ def send_message(db: Session, data: MessageSendRequest) -> Message:
             detail="존재하지 않는 지점입니다.",
         )
 
-    # 2. 트리거 양식 렌더링 (이름 치환)
+    # 2. 트리거 양식 렌더링 (이름·지점명 치환)
     content = message_templates.render_message(
         trigger=data.trigger_type.value,
         name=data.name,
+        branch_name=branch.name,
     )
 
-    # 3. Solapi 발송
-    success, _error = solapi.send_sms(data.recipient, content)
+    # 3. Solapi 발송 (LMS 자동 제목 생성 막으려고 subject 빈 값 전달)
+    success, _error = solapi.send_sms(data.recipient, content, subject=f"{branch.name} 안내")
     msg_status = (
         MessageStatus.SUCCESS.value if success else MessageStatus.FAIL.value
     )
