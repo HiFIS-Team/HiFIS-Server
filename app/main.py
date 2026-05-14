@@ -1,5 +1,8 @@
 import logging
 
+from contextlib import asynccontextmanager
+from app.services.scheduler import start_scheduler, stop_scheduler
+
 from fastapi import FastAPI
 
 from app.api import branch as branch_api
@@ -18,7 +21,19 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-app = FastAPI(title="HiFIS Server")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """앱 시작 시 스케줄러 켜고, 종료 시 끄기"""
+    start_scheduler()
+    yield
+    stop_scheduler()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+app = FastAPI(title="HiFIS Server", lifespan=lifespan)
 
 app.include_router(branch_api.public_router)
 app.include_router(branch_api.admin_router)
