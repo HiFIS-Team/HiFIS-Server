@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480
 
+    SOLAPI_API_KEY: str
+    SOLAPI_API_SECRET: str
+    SOLAPI_SENDER: str
+    AI_API_BASE_URL: str
+    AI_API_TIMEOUT_SECONDS: int = 10
+
     @property
     def DATABASE_URL(self) -> str:
         return (

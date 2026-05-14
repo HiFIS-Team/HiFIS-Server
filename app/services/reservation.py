@@ -4,6 +4,9 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.schemas.enums import MessageSourceType, TriggerType
+from app.schemas.message import MessageSendRequest
+from app.services import message as message_service
 from app.api.deps import resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
@@ -37,6 +40,22 @@ def create_reservation(db: Session, data: ReservationCreate) -> Reservation:
         "예약 생성 완료: branch_id%s, name=%s, phone=%s, visit_date=%s",
         data.branch_id, data.name, mask_phone(data.phone), data.visit_date,
     )
+
+    try:
+        message_service.send_message(db, MessageSendRequest(
+            branch_id=data.branch_id,
+            source_type=MessageSourceType.RESERVATION,
+            source_id=reservation.id,
+            trigger_type=TriggerType.RESERVATION_CONFIRM,
+            recipient=data.phone,
+            name=data.name,
+        ))
+    except Exception as e:
+        logger.error(
+            "예약 확정 알림 발송 실패: reservation_id=%s, error=%s",
+            reservation.id, str(e),
+        )
+
     return reservation
 
 def list_reservation(db: Session, branch_id: UUID | None, current_admin: Admin) -> list[Reservation]:

@@ -4,6 +4,9 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.schemas.enums import MessageSourceType, TriggerType
+from app.schemas.message import MessageSendRequest
+from app.services import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
@@ -69,6 +72,22 @@ def create_member(db: Session, data: MemberCreate) -> Member:
         "회원가입 신청 완료: member_id=%s, branch_id=%s, name=%s, phone=%s",
         member.id, data.branch_id, data.name, mask_phone(data.phone),
     )
+
+    try:
+        message_service.send_message(db, MessageSendRequest(
+            branch_id=data.branch_id,
+            source_type=MessageSourceType.MEMBER,
+            source_id=member.id,
+            trigger_type=TriggerType.REGISTERED,
+            recipient=data.phone,
+            name=data.name,
+        ))
+    except Exception as e:
+        logger.error(
+            "회원 등록 알림 발송 실패: member_id=%s, error=%s",
+            member.id, str(e)
+        )
+
     return member
 
 def list_members(
