@@ -28,3 +28,12 @@ def admin_list_reservations(
 ):
     """예약 목록 조회 (Admin) - FC는 자기 지점만"""
     return reservation_service.list_reservation(db, branch_id, current_admin)
+
+@admin_router.delete("/{reservation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_reservation(
+    reservation_id: UUID,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """예약 삭제 (Admin) - FC는 자기 지점만"""
+    reservation_service.delete_reservation(db, reservation_id, current_admin)

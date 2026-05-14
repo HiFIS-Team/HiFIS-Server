@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.schemas.enums import MessageSourceType, TriggerType
 from app.schemas.message import MessageSendRequest
 from app.services import message as message_service
-from app.api.deps import resolve_branch_filter
+from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.reservation import Reservation
@@ -66,3 +66,16 @@ def list_reservation(db: Session, branch_id: UUID | None, current_admin: Admin) 
     if branch_id is not None:
         query = query.filter(Reservation.branch_id == effective_branch_id)
     return query.order_by(Reservation.created_at.desc()).all()
+
+def delete_reservation(db: Session, reservation_id: UUID, current_admin: Admin) -> None:
+    """예약 삭제 (Admin, 하드 삭제) - FC는 자기 지점만"""
+    reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if reservation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 예약입니다.",
+        )
+    assert_branch_access(current_admin, reservation.branch_id)
+    db.delete(reservation)
+    db.commit()
+    logger.info("예약 삭제 완료: reservation_id=%s", reservation_id)
