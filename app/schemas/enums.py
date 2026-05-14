@@ -61,6 +61,7 @@ class TriggerType(str, Enum):
     # 스케줄러 - 만기 안내 (end_date 기준)
     EXPIRY_SOON_5 = "EXPIRY_SOON_5"                  # 만기 -5일
     EXPIRY_SOON_2 = "EXPIRY_SOON_2"                  # 만기 -2일
+    EXPIRED_TODAY = "EXPIRED_TODAY"                  # 만기 당일
     EXPIRED_FOLLOWUP = "EXPIRED_FOLLOWUP"            # 만기 +30일
 
     # 수동 발송 (관리자) 
