@@ -8,26 +8,26 @@ from app.models.branch import Branch
 from app.models.message import Message
 from app.schemas.enums import MessageStatus
 from app.schemas.message import MessageSendRequest
-from app.services import ai_client, solapi
+from app.services import solapi
 from app.utils.masking import mask_phone
+from app.services import message_templates, solapi
 
 logger = logging.getLogger(__name__)
 
 def send_message(db: Session, data: MessageSendRequest) -> Message:
-    """알림톡 발송 흐름: 지점 조회 → AI 생성 → Solapi 발송 → 이력 저장"""
-    # 1. 지점 조회 (branch_name 필요)
+    """알림톡 발송 흐름: 지점 조회 → 양식 렌더링 → Solapi 발송 → 이력 저장"""
+    # 1. 지점 조회 (branch_id 검증용)
     branch = db.query(Branch).filter(Branch.id == data.branch_id).first()
     if branch is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="존재하지 않는 지점입니다.",
         )
-    
-    # 2. AI에 메시지 생성 요청 (실패 시 자동 폴백)
-    content = ai_client.generate_message(
+
+    # 2. 트리거 양식 렌더링 (이름 치환)
+    content = message_templates.render_message(
         trigger=data.trigger_type.value,
         name=data.name,
-        branch_name=branch.name,
     )
 
     # 3. Solapi 발송
@@ -49,7 +49,7 @@ def send_message(db: Session, data: MessageSendRequest) -> Message:
     db.add(message)
     db.commit()
     db.refresh(message)
-    
+
     logger.info(
         "메시지 이력 저장 완료: source=%s/%s, trigger=%s, recipient=%s, status=%s",
         data.source_type.value, data.source_id, data.trigger_type.value,
