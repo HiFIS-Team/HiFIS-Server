@@ -60,7 +60,7 @@ def get_referral_stats(db: Session, branch_id: UUID | None, current_admin: Admin
     items = [
         StatItem(
             code=ref.value,
-            label=REFERRAL_LABELS,
+            label=REFERRAL_LABELS[ref],
             count=counts.get(ref.value, 0)
         )
         for ref in Referral
