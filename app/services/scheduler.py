@@ -70,6 +70,9 @@ def run_daily_triggers() -> None:
             (2, TriggerType.EXPIRY_SOON_2),
         ]:
             _process_expiry_soon(db, today, days, trigger)
+
+        # 만기 당일 안내 발송 (상태 변경 전에)   ★ 추가된 줄
+        _process_expired_today(db, today)         # ★ 추가된 줄
         
         # 만기 도래 -> EXPIRED 변경 (알림 X)
         _process_expire_status(db, today)
@@ -274,4 +277,36 @@ def _try_send(
         logger.error(
             "스케줄러 알림 발송 실패: source=%s/%s, trigger=%s, error=%s",
             source_type.value, source_id, trigger.value, str(e),
+        )
+
+def _process_expired_today(db: Session, today: date) -> None:
+    """만기 당일 회원/PT에게 재등록 안내 (상태 변경은 _process_expire_status가 다음날 처리)"""
+    members = db.query(Member).filter(
+        Member.end_date == today,
+        Member.status == MemberStatus.REGISTERED.value,
+    ).all()
+    for m in members:
+        _try_send(
+            db,
+            branch_id=m.branch_id,
+            source_type=MessageSourceType.MEMBER,
+            source_id=m.id,
+            trigger=TriggerType.EXPIRED_TODAY,
+            recipient=m.phone,
+            name=m.name,
+        )
+
+    apps = db.query(PTApplication).filter(
+        PTApplication.end_date == today,
+        PTApplication.status == MemberStatus.REGISTERED.value,
+    ).all()
+    for a in apps:
+        _try_send(
+            db,
+            branch_id=a.branch_id,
+            source_type=MessageSourceType.PT_APPLICATION,
+            source_id=a.id,
+            trigger=TriggerType.EXPIRED_TODAY,
+            recipient=a.phone,
+            name=a.name,
         )
