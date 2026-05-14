@@ -43,13 +43,28 @@ class MemberStatus(str, Enum):
     EXPIRED = "EXPIRED"
 
 class TriggerType(str, Enum):
-    """알림톡 발송 트리거"""
-    RESERVATION_CONFIRM = "RESERVATION_CONFIRM"
-    REGISTERED = "REGISTERED"
-    D_PLUS_3 = "D_PLUS_3"
-    D_PLUS_7 = "D_PLUS_7"
-    D_PLUS_30 = "D_PLUS_30"
-    EXPIRY_SOON = "EXPIRY_SOON"
+    """알림톡 발송 트리거 (11종)"""
+
+    # 실시간 발송 (API 직후)
+    RESERVATION_CONFIRM = "RESERVATION_CONFIRM" # 예약 등록 직후
+    REGISTERED = "REGISTERED" # 회원/PT 신청서 제출 직후
+
+    # 스케줄러 - 예약 미등록 권유
+    RESERVATION_CHECK_1 = "RESERVATION_CHECK_1"  # 예약 +3일 + 미등록
+    RESERVATION_CHECK_2 = "RESERVATION_CHECK_2" # 예약 +5일 + 미등록
+
+    # 스케줄러 - 회원 케어 (제출일 기준)
+    D_PLUS_7 = "D_PLUS_7" # +7일
+    D_PLUS_14 = "D_PLUS_14" # +14일
+    D_PLUS_30 = "D_PLUS_30" # +30일 (한달 차)
+
+    # 스케줄러 - 만기 안내 (end_date 기준)
+    EXPIRY_SOON_5 = "EXPIRY_SOON_5"                  # 만기 -5일
+    EXPIRY_SOON_2 = "EXPIRY_SOON_2"                  # 만기 -2일
+    EXPIRED_FOLLOWUP = "EXPIRED_FOLLOWUP"            # 만기 +30일
+
+    # 수동 발송 (관리자) 
+    EVENT = "EVENT" # 이벤트 알림
 
 class MessageStatus(str, Enum):
     """알림톡 발송 결과"""
