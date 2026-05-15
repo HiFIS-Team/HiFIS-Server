@@ -1,7 +1,8 @@
 """회원권 홀딩 - 사유 기록 + 만기일 연장 + 사유 기반 AI 알림톡 (관리자 전용)"""
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -18,6 +19,9 @@ from app.schemas.message import MessageSendRequest
 from app.services import claude, message as message_service
 
 logger = logging.getLogger(__name__)
+
+KST = ZoneInfo("Asia/Seoul")
+
 
 def _get_target(db: Session, source_type: MessageSourceType, source_id: UUID):
     """홀딩 대상(회원/PT 신청) 조회 - 없으면 404"""
@@ -85,3 +89,68 @@ def create_hold(db: Session, data: HoldCreate, current_admin: Admin) -> Hold:
         )
 
     return hold
+
+def cancel_hold(db: Session, hold_id: UUID, current_admin: Admin) -> None:
+    """홀딩 취소 - 만기일 조정 → 알림톡 → 홀딩 레코드 삭제
+
+    실제 쉰 일수만큼만 만기 연장 유지, 남은 일수는 만기일에서 환원.
+    """
+    hold = db.query(Hold).filter(Hold.id == hold_id).first()
+    if hold is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 홀딩입니다.",
+        )
+
+    source_type = MessageSourceType(hold.source_type)
+    target = _get_target(db, source_type, hold.source_id)
+    assert_branch_access(current_admin, target.branch_id)
+
+    # 환원 일수 계산
+    today = datetime.now(KST).date()
+    planned_days = (hold.end_date - hold.start_date).days
+    actual_days = max(0, (min(today, hold.end_date) - hold.start_date).days)
+    refund_days = planned_days - actual_days
+
+    # 만기일 조정 + 홀딩 삭제 (원자적)
+    target.end_date = target.end_date - timedelta(days=refund_days)
+    captured = {
+        "name": target.name,
+        "phone": target.phone,
+        "branch_id": target.branch_id,
+        "reason": hold.reason,
+        "new_end_date": str(target.end_date),
+        "hold_id": hold.id,
+    }
+    db.delete(hold)
+    db.commit()
+
+    logger.info(
+        "홀딩 취소 완료: hold_id=%s, 실제 %d일 쉼, %d일 환원, 만기일 %s",
+        captured["hold_id"], actual_days, refund_days, captured["new_end_date"],
+    )
+
+    # 취소 알림톡 발송 (실패해도 취소 자체는 유지)
+    try:
+        branch = db.query(Branch).filter(Branch.id == captured["branch_id"]).first()
+        body = claude.generate_hold_cancel_body(
+            name=captured["name"],
+            branch_name=branch.name,
+            reason=captured["reason"],
+            actual_days=actual_days,
+            new_end_date=captured["new_end_date"],
+        )
+        message_service.send_message(db, MessageSendRequest(
+            branch_id=captured["branch_id"],
+            source_type=MessageSourceType.HOLD,
+            source_id=captured["hold_id"],
+            trigger_type=TriggerType.HOLD_CANCEL,
+            recipient=captured["phone"],
+            name=captured["name"],
+            body_override=body,
+        ))
+    except Exception as e:
+        logger.error(
+            "홀딩 취소 알림 발송 실패: hold_id=%s, error=%s",
+            captured["hold_id"], str(e),
+        )

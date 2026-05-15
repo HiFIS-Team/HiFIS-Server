@@ -49,6 +49,7 @@ class TriggerType(str, Enum):
     RESERVATION_CONFIRM = "RESERVATION_CONFIRM" # 예약 등록 직후
     REGISTERED = "REGISTERED" # 회원/PT 신청서 제출 직후
     HOLD = "HOLD" # 홀딩 신청 직후 (사유 기반 AI 본문)
+    HOLD_CANCEL = "HOLD_CANCEL" # 홀딩 취소 시 (AI 본문)
 
     # 스케줄러 - 예약 미등록 권유
     RESERVATION_CHECK_1 = "RESERVATION_CHECK_1"  # 예약 +3일 + 미등록
