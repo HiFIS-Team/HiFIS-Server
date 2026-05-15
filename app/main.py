@@ -15,6 +15,7 @@ from app.api import pt_application as pt_application_api
 from app.api import admin as admin_api
 from app.api import message as message_api
 from app.api import stats as stats_api
+from app.api import hold as hold_api
 
 # 앱 전역 logging 설정 (root logger에 핸들러 부착)
 logging.basicConfig(
@@ -53,6 +54,7 @@ app.include_router(admin_api.public_router)
 app.include_router(admin_api.admin_router)
 app.include_router(message_api.router) 
 app.include_router(stats_api.admin_router)
+app.include_router(hold_api.admin_router)
 
 @app.get("/")
 def read_root():
