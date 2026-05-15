@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     SOLAPI_API_SECRET: str
     SOLAPI_SENDER: str
 
+    CLAUDE_API_KEY: str
+
     @property
     def DATABASE_URL(self) -> str:
         return (
