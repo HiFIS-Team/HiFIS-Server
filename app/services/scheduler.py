@@ -1,6 +1,7 @@
 """매일 자정 자동 트리거 - 알림톡 발송 + 만기 상태 변경"""
 import logging
 from datetime import date, timedelta
+from zoneinfo import ZoneInfo 
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import func
@@ -22,6 +23,7 @@ from app.services import message as message_service
 
 logger = logging.getLogger(__name__)
 
+KST = ZoneInfo("Asia/Seoul")               
 scheduler = BackgroundScheduler(timezone="Asia/Seoul")
 
 def start_scheduler() -> None:
@@ -30,13 +32,13 @@ def start_scheduler() -> None:
         scheduler.add_job(
             run_daily_triggers,
             "cron",
-            hour=0,
+            hour=8,
             minute=0,
             id="daily_triggers",
             replace_existing=True,
         )
         scheduler.start()
-        logger.info("스케줄러 시작 - 매일 자정 트리거 등록 완료")
+        logger.info("스케줄러 시작 - 매일 08:00 KST 트리거 등록 완료")
 
 def stop_scheduler() -> None:
     """앱 종료 시 호출"""
@@ -45,7 +47,7 @@ def stop_scheduler() -> None:
         logger.info("스케줄러 종료")
 
 def run_daily_triggers() -> None:
-    """매일 자정 실행 - 모든 트리거 처리"""
+    """매일 오전 8시(KST) 실행 - 모든 트리거 처리"""
     db = SessionLocal()
     try:
         today = date.today()
