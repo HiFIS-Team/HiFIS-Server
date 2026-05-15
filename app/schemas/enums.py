@@ -48,6 +48,7 @@ class TriggerType(str, Enum):
     # 실시간 발송 (API 직후)
     RESERVATION_CONFIRM = "RESERVATION_CONFIRM" # 예약 등록 직후
     REGISTERED = "REGISTERED" # 회원/PT 신청서 제출 직후
+    HOLD = "HOLD" # 홀딩 신청 직후 (사유 기반 AI 본문)
 
     # 스케줄러 - 예약 미등록 권유
     RESERVATION_CHECK_1 = "RESERVATION_CHECK_1"  # 예약 +3일 + 미등록
@@ -77,6 +78,13 @@ class MessageSourceType(str, Enum):
     MEMBER = "MEMBER"
     PT_APPLICATION = "PT_APPLICATION"
     RESERVATION = "RESERVATION"    
+
+class MessageSourceType(str, Enum):
+    """알림톡 발생 출처"""
+    MEMBER = "MEMBER"
+    PT_APPLICATION = "PT_APPLICATION"
+    RESERVATION = "RESERVATION"
+    HOLD = "HOLD"
 
 # === 한국어 라벨 매핑 (프론트 표시용) ===
 

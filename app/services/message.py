@@ -24,14 +24,16 @@ def send_message(db: Session, data: MessageSendRequest) -> Message:
             detail="존재하지 않는 지점입니다.",
         )
 
-    # 2. 트리거 양식 렌더링 (이름·지점정보 치환)
+    # 2. 트리거 양식 렌더링 (이름·지점정보 치환, body_override 있으면 우선)
     content = message_templates.render_message(
         trigger=data.trigger_type.value,
         name=data.name,
         branch_name=branch.name,
         branch_phone=branch.phone,
         naver_place_url=branch.naver_place_url,
+        body_override=data.body_override,
     )
+
     
     # 3. Solapi 발송 (LMS 자동 제목 생성 막으려고 subject 빈 값 전달)
     success, _error = solapi.send_sms(data.recipient, content, subject=f"{branch.name} 안내")

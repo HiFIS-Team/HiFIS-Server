@@ -101,9 +101,11 @@ def render_message(
     branch_name: str,
     branch_phone: str,
     naver_place_url: str | None = None,
+    body_override: str | None = None,
 ) -> str:
-    """트리거 양식에 이름·지점정보 치환 - 미정의 트리거는 기본 인사문 폴백"""
-    body = _BODIES.get(trigger, "안녕하세요, 반갑습니다 :)")
+    """트리거 양식에 이름·지점정보 치환 - body_override 있으면 본문으로 사용 (홀딩 등 AI 생성)"""
+    body = body_override or _BODIES.get(trigger, "안녕하세요, 반갑습니다 :)")
     header = _HEADER.replace("{name}", name).replace("{branch_name}", branch_name)
     footer = _build_footer(branch_name, branch_phone, naver_place_url)
     return f"{header}\n\n{body}\n\n{footer}"
+
