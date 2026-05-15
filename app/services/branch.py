@@ -8,7 +8,12 @@ from app.schemas.branch import BranchCreate, BranchUpdate
 
 def create_branch(db: Session, data: BranchCreate) -> Branch:
     """지점 등록"""
-    branch = Branch(name=data.name, phone=data.phone)
+    branch = Branch(
+        name=data.name,
+        phone=data.phone,
+        kakao_url=data.kakao_url,
+        naver_place_url=data.naver_place_url,
+    )
     db.add(branch)
     db.commit()
     db.refresh(branch)
@@ -36,6 +41,10 @@ def update_branch(db: Session, branch_id: UUID, data: BranchUpdate) -> Branch:
         branch.name = data.name
     if data.phone is not None:
         branch.phone = data.phone
+    if data.kakao_url is not None:
+        branch.kakao_url = data.kakao_url
+    if data.naver_place_url is not None:
+        branch.naver_place_url = data.naver_place_url
 
     db.commit()
     db.refresh(branch)

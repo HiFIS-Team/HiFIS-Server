@@ -167,3 +167,10 @@ def update_pt_application_status(db: Session, application_id: UUID, data: PTAppl
     db.commit()
     db.refresh(application)
     return application
+
+def delete_pt_application(db: Session, application_id: UUID, current_admin: Admin) -> None:
+    """PT 신청 삭제 (Admin, 하드 삭제) - FC는 자기 지점만"""
+    application = get_pt_application(db, application_id, current_admin)
+    db.delete(application)
+    db.commit()
+    logger.info("PT 신청 삭제 완료: application_id=%s", application_id)

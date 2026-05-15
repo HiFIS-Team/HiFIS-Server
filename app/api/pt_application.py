@@ -56,3 +56,12 @@ def admin_update_pt_application(
     return pt_application_service.update_pt_application(
         db, application_id, payload, current_admin
     )
+
+@admin_router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_pt_application(
+    application_id: UUID,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """PT 신청 삭제 (Admin) - FC는 자기 지점만"""
+    pt_application_service.delete_pt_application(db, application_id, current_admin)

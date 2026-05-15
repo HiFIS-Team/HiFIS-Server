@@ -31,3 +31,4 @@ typing_extensions==4.15.0
 uvicorn==0.46.0
 solapi==5.0.3
 APScheduler==3.11.2
+anthropic

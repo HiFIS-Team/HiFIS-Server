@@ -54,3 +54,12 @@ def admin_update_membership_pass(
 ):
     """회원권 수정 - FC는 자기 지점 회원권만 수정 가능"""
     return membership_pass_service.update_membership_pass(db, pass_id, payload, current_admin)
+
+@admin_router.delete("/{pass_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_membership_pass(
+    pass_id: UUID,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """회원권 삭제 (Admin) - FC는 자기 지점만, 사용 중이면 409"""
+    membership_pass_service.delete_membership_pass(db, pass_id, current_admin)

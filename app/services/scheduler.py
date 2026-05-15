@@ -1,6 +1,7 @@
 """매일 자정 자동 트리거 - 알림톡 발송 + 만기 상태 변경"""
 import logging
 from datetime import date, timedelta
+from zoneinfo import ZoneInfo 
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import func
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.member import Member
 from app.models.message import Message
+from app.models.hold import Hold
 from app.models.pt_application import PTApplication
 from app.models.reservation import Reservation
 from app.schemas.enums import(
@@ -22,6 +24,7 @@ from app.services import message as message_service
 
 logger = logging.getLogger(__name__)
 
+KST = ZoneInfo("Asia/Seoul")               
 scheduler = BackgroundScheduler(timezone="Asia/Seoul")
 
 def start_scheduler() -> None:
@@ -30,13 +33,13 @@ def start_scheduler() -> None:
         scheduler.add_job(
             run_daily_triggers,
             "cron",
-            hour=0,
+            hour=8,
             minute=0,
             id="daily_triggers",
             replace_existing=True,
         )
         scheduler.start()
-        logger.info("스케줄러 시작 - 매일 자정 트리거 등록 완료")
+        logger.info("스케줄러 시작 - 매일 08:00 KST 트리거 등록 완료")
 
 def stop_scheduler() -> None:
     """앱 종료 시 호출"""
@@ -45,7 +48,7 @@ def stop_scheduler() -> None:
         logger.info("스케줄러 종료")
 
 def run_daily_triggers() -> None:
-    """매일 자정 실행 - 모든 트리거 처리"""
+    """매일 오전 8시(KST) 실행 - 모든 트리거 처리"""
     db = SessionLocal()
     try:
         today = date.today()
@@ -70,9 +73,14 @@ def run_daily_triggers() -> None:
             (2, TriggerType.EXPIRY_SOON_2),
         ]:
             _process_expiry_soon(db, today, days, trigger)
+
+        # 만기 당일 안내 발송 (상태 변경 전에)   ★ 추가된 줄
+        _process_expired_today(db, today)         # ★ 추가된 줄
         
         # 만기 도래 -> EXPIRED 변경 (알림 X)
         _process_expire_status(db, today)
+
+        _process_expired_holds(db, today)
 
         # 만기 +30일 재등록 권유
         _process_expired_followup(db, today, 30, TriggerType.EXPIRED_FOLLOWUP)
@@ -275,3 +283,45 @@ def _try_send(
             "스케줄러 알림 발송 실패: source=%s/%s, trigger=%s, error=%s",
             source_type.value, source_id, trigger.value, str(e),
         )
+
+def _process_expired_today(db: Session, today: date) -> None:
+    """만기 당일 회원/PT에게 재등록 안내 (상태 변경은 _process_expire_status가 다음날 처리)"""
+    members = db.query(Member).filter(
+        Member.end_date == today,
+        Member.status == MemberStatus.REGISTERED.value,
+    ).all()
+    for m in members:
+        _try_send(
+            db,
+            branch_id=m.branch_id,
+            source_type=MessageSourceType.MEMBER,
+            source_id=m.id,
+            trigger=TriggerType.EXPIRED_TODAY,
+            recipient=m.phone,
+            name=m.name,
+        )
+
+    apps = db.query(PTApplication).filter(
+        PTApplication.end_date == today,
+        PTApplication.status == MemberStatus.REGISTERED.value,
+    ).all()
+    for a in apps:
+        _try_send(
+            db,
+            branch_id=a.branch_id,
+            source_type=MessageSourceType.PT_APPLICATION,
+            source_id=a.id,
+            trigger=TriggerType.EXPIRED_TODAY,
+            recipient=a.phone,
+            name=a.name,
+        )
+
+def _process_expired_holds(db: Session, today: date) -> None:
+    """종료일 지난 홀딩 레코드 자동 정리 (회원 만기일은 이미 정상 연장됨, 무음)"""
+    expired = db.query(Hold).filter(Hold.end_date < today).all()
+    if not expired:
+        return
+    for h in expired:
+        db.delete(h)
+    db.commit()
+    logger.info("홀딩 자동 종료 정리: %d건", len(expired))

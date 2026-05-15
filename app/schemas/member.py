@@ -26,8 +26,8 @@ class MemberCreate(BaseModel):
     final_price: int = Field(..., ge=0)
     start_date: date
     end_date: date
-    locker: bool = False
-    clothes_rental: bool = False
+    locker_pass_id: UUID | None = None
+    clothes_pass_id: UUID | None = None
     motivation: Motivation
     agreed_terms: bool = Field(..., description="운영 회칙 동의 (true 필수)")
 
@@ -58,8 +58,8 @@ class MemberUpdate(BaseModel):
     final_price : int | None = Field(default=None, ge=0)
     start_date: date | None = None
     end_date: date | None = None
-    locker: bool | None = None
-    clothes_rental: bool | None = None
+    locker_pass_id: UUID | None = None
+    clothes_pass_id: UUID | None = None
     motivation: Motivation | None = None
 
     @field_validator("phone")
@@ -92,8 +92,8 @@ class MemberResponse(BaseModel):
     final_price: int
     start_date: date
     end_date: date
-    locker: bool
-    clothes_rental: bool
+    locker_pass_id: UUID | None
+    clothes_pass_id: UUID | None
     motivation: Motivation
     status: MemberStatus
     created_at: datetime

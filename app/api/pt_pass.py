@@ -49,3 +49,12 @@ def admin_update_pt_pass(
 ):
     """수강권 수정 (Admin, 부분 수정)"""
     return pt_pass_service.update_pt_pass(db, pass_id, payload, current_admin)
+
+@admin_router.delete("/{pass_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_pt_pass(
+    pass_id: UUID,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """수강권 삭제 (Admin) - FC는 자기 지점만, 사용 중이면 409"""
+    pt_pass_service.delete_pt_pass(db, pass_id, current_admin)

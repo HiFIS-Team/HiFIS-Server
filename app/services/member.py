@@ -11,6 +11,8 @@ from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.member import Member
+from app.models.clothes_pass import ClothesPass
+from app.models.locker_pass import LockerPass
 from app.models.membership_pass import MembershipPass
 from app.schemas.member import MemberCreate, MemberStatusUpdate, MemberUpdate
 from app.utils.masking import mask_phone
@@ -41,10 +43,44 @@ def _ensure_membership_pass_match( db: Session, membership_pass_id: UUID, branch
             detail="해당 지점의 회원권이 아닙니다."
         )
     
+def _ensure_locker_pass_match(db: Session, pass_id: UUID, branch_id: UUID) -> None:
+    """락커 상품 존재 + 해당 지점 상품인지 검증"""
+    pass_obj = db.query(LockerPass).filter(LockerPass.id == pass_id).first()
+    if pass_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 락커 상품입니다.",
+        )
+    if pass_obj.branch_id != branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="해당 지점의 락커 상품이 아닙니다.",
+        )
+
+def _ensure_clothes_pass_match(db: Session, pass_id: UUID, branch_id: UUID) -> None:
+    """운동복 상품 존재 + 해당 지점 상품인지 검증"""
+    pass_obj = db.query(ClothesPass).filter(ClothesPass.id == pass_id).first()
+    if pass_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 운동복 상품입니다.",
+        )
+    if pass_obj.branch_id != branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="해당 지점의 운동복 상품이 아닙니다.",
+        )
+
+    
 def create_member(db: Session, data: MemberCreate) -> Member:
     """회원가입 신청서 생성 - 지점/회원권 검증 후 저장"""
     _ensure_branch_exists(db, data.branch_id)
     _ensure_membership_pass_match(db, data.membership_pass_id, data.branch_id)
+
+    if data.locker_pass_id is not None:
+        _ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+    if data.clothes_pass_id is not None:
+        _ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
 
     member = Member(
         branch_id=data.branch_id,
@@ -59,8 +95,8 @@ def create_member(db: Session, data: MemberCreate) -> Member:
         final_price=data.final_price,
         start_date=data.start_date,
         end_date=data.end_date,
-        locker=data.locker,
-        clothes_rental=data.clothes_rental,
+        locker_pass_id=data.locker_pass_id,             
+        clothes_pass_id=data.clothes_pass_id,           
         motivation=data.motivation.value,
         agreed_terms=data.agreed_terms,
     )
@@ -147,10 +183,12 @@ def update_member(
         member.start_date = data.start_date
     if data.end_date is not None:
         member.end_date = data.end_date
-    if data.locker is not None:
-        member.locker = data.locker
-    if data.clothes_rental is not None:
-        member.clothes_rental = data.clothes_rental
+    if data.locker_pass_id is not None:
+        _ensure_locker_pass_match(db, data.locker_pass_id, member.branch_id)
+        member.locker_pass_id = data.locker_pass_id
+    if data.clothes_pass_id is not None:
+        _ensure_clothes_pass_match(db, data.clothes_pass_id, member.branch_id)
+        member.clothes_pass_id = data.clothes_pass_id
     if data.motivation is not None:
         member.motivation = data.motivation.value
     
@@ -170,4 +208,11 @@ def update_member_status(db: Session, member_id: UUID, data: MemberStatusUpdate)
     db.commit()
     db.refresh(member)
     return member
+
+def delete_member(db: Session, member_id: UUID, current_admin: Admin) -> None:
+    """회원 삭제 (Admin, 하드 삭제) - FC는 자기 지점만"""
+    member = get_member(db, member_id, current_admin)
+    db.delete(member)
+    db.commit()
+    logger.info("회원 삭제 완료: member_id=%s", member_id)
     

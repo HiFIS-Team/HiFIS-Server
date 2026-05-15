@@ -48,6 +48,8 @@ class TriggerType(str, Enum):
     # 실시간 발송 (API 직후)
     RESERVATION_CONFIRM = "RESERVATION_CONFIRM" # 예약 등록 직후
     REGISTERED = "REGISTERED" # 회원/PT 신청서 제출 직후
+    HOLD = "HOLD" # 홀딩 신청 직후 (사유 기반 AI 본문)
+    HOLD_CANCEL = "HOLD_CANCEL" # 홀딩 취소 시 (AI 본문)
 
     # 스케줄러 - 예약 미등록 권유
     RESERVATION_CHECK_1 = "RESERVATION_CHECK_1"  # 예약 +3일 + 미등록
@@ -61,10 +63,8 @@ class TriggerType(str, Enum):
     # 스케줄러 - 만기 안내 (end_date 기준)
     EXPIRY_SOON_5 = "EXPIRY_SOON_5"                  # 만기 -5일
     EXPIRY_SOON_2 = "EXPIRY_SOON_2"                  # 만기 -2일
+    EXPIRED_TODAY = "EXPIRED_TODAY"                  # 만기 당일
     EXPIRED_FOLLOWUP = "EXPIRED_FOLLOWUP"            # 만기 +30일
-
-    # 수동 발송 (관리자) 
-    EVENT = "EVENT" # 이벤트 알림
 
 class MessageStatus(str, Enum):
     """알림톡 발송 결과"""
@@ -76,6 +76,13 @@ class MessageSourceType(str, Enum):
     MEMBER = "MEMBER"
     PT_APPLICATION = "PT_APPLICATION"
     RESERVATION = "RESERVATION"    
+
+class MessageSourceType(str, Enum):
+    """알림톡 발생 출처"""
+    MEMBER = "MEMBER"
+    PT_APPLICATION = "PT_APPLICATION"
+    RESERVATION = "RESERVATION"
+    HOLD = "HOLD"
 
 # === 한국어 라벨 매핑 (프론트 표시용) ===
 

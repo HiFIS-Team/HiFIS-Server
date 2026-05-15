@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     SOLAPI_API_KEY: str
     SOLAPI_API_SECRET: str
     SOLAPI_SENDER: str
-    AI_API_BASE_URL: str
-    AI_API_TIMEOUT_SECONDS: int = 10
+
+    CLAUDE_API_KEY: str
 
     @property
     def DATABASE_URL(self) -> str:
