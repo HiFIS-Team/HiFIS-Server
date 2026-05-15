@@ -65,9 +65,6 @@ class TriggerType(str, Enum):
     EXPIRED_TODAY = "EXPIRED_TODAY"                  # 만기 당일
     EXPIRED_FOLLOWUP = "EXPIRED_FOLLOWUP"            # 만기 +30일
 
-    # 수동 발송 (관리자) 
-    EVENT = "EVENT" # 이벤트 알림
-
 class MessageStatus(str, Enum):
     """알림톡 발송 결과"""
     SUCCESS = "SUCCESS"
