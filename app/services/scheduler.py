@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.member import Member
 from app.models.message import Message
+from app.models.hold import Hold
 from app.models.pt_application import PTApplication
 from app.models.reservation import Reservation
 from app.schemas.enums import(
@@ -78,6 +79,8 @@ def run_daily_triggers() -> None:
         
         # 만기 도래 -> EXPIRED 변경 (알림 X)
         _process_expire_status(db, today)
+
+        _process_expired_holds(db, today)
 
         # 만기 +30일 재등록 권유
         _process_expired_followup(db, today, 30, TriggerType.EXPIRED_FOLLOWUP)
@@ -312,3 +315,13 @@ def _process_expired_today(db: Session, today: date) -> None:
             recipient=a.phone,
             name=a.name,
         )
+
+def _process_expired_holds(db: Session, today: date) -> None:
+    """종료일 지난 홀딩 레코드 자동 정리 (회원 만기일은 이미 정상 연장됨, 무음)"""
+    expired = db.query(Hold).filter(Hold.end_date < today).all()
+    if not expired:
+        return
+    for h in expired:
+        db.delete(h)
+    db.commit()
+    logger.info("홀딩 자동 종료 정리: %d건", len(expired))
