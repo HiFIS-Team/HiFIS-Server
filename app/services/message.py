@@ -1,12 +1,18 @@
 """트리거 기반 알림톡 발송 + 이력 저장"""
 import logging
+import re
+from datetime import date
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func
+from app.api.deps import assert_branch_access, resolve_branch_filter
+from app.models.admin import Admin
+from app.schemas.enums import MessageSourceType, MessageStatus, TriggerType
 from app.models.branch import Branch
 from app.models.message import Message
-from app.schemas.enums import MessageStatus
 from app.schemas.message import MessageSendRequest
 from app.services import solapi
 from app.utils.masking import mask_phone
@@ -61,3 +67,50 @@ def send_message(db: Session, data: MessageSendRequest) -> Message:
         mask_phone(data.recipient), msg_status,
     )
     return message
+
+def list_messages(
+    db: Session,
+    branch_id: UUID | None,
+    source_type: MessageSourceType | None,
+    source_id: UUID | None,
+    trigger_type: TriggerType | None,
+    status: MessageStatus | None,
+    phone: str | None,
+    sent_from: date | None,
+    sent_to: date | None,
+    current_admin: Admin,
+) -> list[Message]:
+    """메시지 발송 이력 조회 + 필터 (FC는 자기 지점만, 최신순)"""
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+
+    query = db.query(Message)
+    if effective_branch_id is not None:
+        query = query.filter(Message.branch_id == effective_branch_id)
+    if source_type is not None:
+        query = query.filter(Message.source_type == source_type.value)
+    if source_id is not None:
+        query = query.filter(Message.source_id == source_id)
+    if trigger_type is not None:
+        query = query.filter(Message.trigger_type == trigger_type.value)
+    if status is not None:
+        query = query.filter(Message.status == status.value)
+    if phone:
+        phone_digits = re.sub(r"\D", "", phone)
+        if phone_digits:
+            query = query.filter(Message.recipient.like(f"%{phone_digits}%"))
+    if sent_from is not None:
+        query = query.filter(func.date(Message.sent_at) >= sent_from)
+    if sent_to is not None:
+        query = query.filter(func.date(Message.sent_at) <= sent_to)
+    return query.order_by(Message.sent_at.desc()).all()
+
+def get_message(db: Session, message_id: UUID, current_admin: Admin) -> Message:
+    """메시지 단건 조회 - 없으면 404, FC는 자기 지점만"""
+    msg = db.query(Message).filter(Message.id == message_id).first()
+    if msg is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 메시지입니다.",
+        )
+    assert_branch_access(current_admin, msg.branch_id)
+    return msg
