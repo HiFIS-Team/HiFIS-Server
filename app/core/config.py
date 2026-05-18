@@ -1,4 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Annotated
+from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
+from pydantic import field_validator
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
@@ -18,6 +20,15 @@ class Settings(BaseSettings):
     SOLAPI_SENDER: str
 
     CLAUDE_API_KEY: str
+
+    CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = []
+
+    @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def _parse_cors(cls, v):
+        if isinstance(v, str):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
     @property
     def DATABASE_URL(self) -> str:

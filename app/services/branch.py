@@ -29,9 +29,21 @@ def get_branch(db: Session, branch_id: UUID) -> Branch:
     if branch is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="지점을 찾을 수 없습니다."
+            detail="존재하지 않는 지점입니다."
         )
     return branch
+
+
+def ensure_branch_exists(db: Session, branch_id: UUID) -> None:
+    """지점 존재 검증만 수행 - 객체 필요 없을 때 사용 (없으면 404)
+
+    branch 객체가 필요하면 get_branch()를 사용하세요.
+    """
+    if db.query(Branch.id).filter(Branch.id == branch_id).first() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 지점입니다.",
+        )
 
 def update_branch(db: Session, branch_id: UUID, data: BranchUpdate) -> Branch:
     """지점 정보 수정(부분 수정)"""

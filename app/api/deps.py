@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
 from app.db.deps import get_db
-from app.models.admin import Admin
-from app.schemas.admin import AdminRole
+from app.models.admin.admin import Admin
+from app.schemas.admin.admin import AdminRole
 
 def _extract_token(request: Request) -> str:
     """Authorization 헤더에서 Bearer 토큰 추출"""

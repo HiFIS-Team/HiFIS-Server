@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.schemas.hold import HoldCreate, HoldResponse
 from app.services import hold as hold_service
 

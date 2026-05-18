@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+venv/
+.venv/
+env/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 환경변수 (env_file로 따로 주입, 이미지에 박지 않음)
+.env
+.env.*
+
+# 테스트 / 캐시
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+tests/
+
+# 문서 / 에디터
+.vscode/
+.idea/
+.DS_Store
+README.md
+.claude/
+
+# Docker 자체 파일 (이미지 안에 또 들어갈 필요 없음)
+Dockerfile
+docker-compose.yml
+.dockerignore

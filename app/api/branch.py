@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_super_admin
 from app.db.deps import get_db
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.schemas.branch import BranchCreate, BranchResponse, BranchUpdate
 from app.services import branch as branch_service
 

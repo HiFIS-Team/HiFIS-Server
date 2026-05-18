@@ -1,18 +1,38 @@
-version: "3.8"
-
 services:
   db:
-    image: postgres:15
-    container_name: hifis-postgres
-    restart: always
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${HIFIS_DB_USER}
       POSTGRES_PASSWORD: ${HIFIS_DB_PASSWORD}
       POSTGRES_DB: ${HIFIS_DB_NAME}
-    ports:
-      - "5432:5432"
+      TZ: Asia/Seoul       # 컨테이너 OS 타임존
+      PGTZ: Asia/Seoul     # Postgres 세션 타임존
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"        # 로컬에서 psql/툴로 직접 접속 필요 없으면 이 줄 삭제 OK
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HIFIS_DB_USER} -d ${HIFIS_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy   # DB 준비 끝난 뒤 시작
+    environment:
+      # .env의 HIFIS_DB_HOST(=localhost)를 컨테이너 내부에서 서비스명 'db'로 덮어씀
+      HIFIS_DB_HOST: db
+    env_file:
+      - .env                # 나머지 환경변수는 .env 그대로 사용
+    ports:
+      - "8000:8000"
+    # 마이그레이션 자동 실행 후 서버 시작
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
 volumes:
-  postgres_data:
+  pg_data:
