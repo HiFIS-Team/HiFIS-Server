@@ -1,0 +1,7 @@
+# 개발/테스트 전용 의존성 (운영 서버엔 설치 불필요)
+# 사용법: pip install -r requirements.txt -r requirements-dev.txt
+#
+# 운영 배포에는 requirements.txt만 설치 → 컨테이너 용량/빌드 시간 절약
+
+pytest==9.0.3
+pytest-cov==7.1.0
