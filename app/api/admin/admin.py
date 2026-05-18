@@ -3,14 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_super_admin
 from app.db.deps import get_db
-from app.models.admin import Admin
-from app.schemas.admin import (
+from app.models.admin.admin import Admin
+from app.schemas.admin.admin import (
     AdminCreate,
     AdminResponse,
     LoginRequest,
     TokenResponse,
 ) 
-from app.services import admin as admin_service
+from app.services.admin import admin as admin_service
 
 # Public - 로그인 (인증 불필요)
 public_router = APIRouter(prefix="/admin", tags=["admin-auth"])

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func
 from app.api.deps import assert_branch_access, resolve_branch_filter
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.schemas.enums import MessageSourceType, MessageStatus, TriggerType
 from app.models.branch import Branch
 from app.models.message import Message

@@ -8,7 +8,7 @@ from app.schemas.enums import MessageSourceType, TriggerType
 from app.schemas.message import MessageSendRequest
 from app.services import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.models.branch import Branch
 from app.models.registrations.reservation import Reservation
 from app.schemas.registrations.reservation import ReservationCreate

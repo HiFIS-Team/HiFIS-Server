@@ -19,9 +19,9 @@ from app.api.passes import pt as pt_pass_api
 from app.api.registrations import member as member_api
 from app.api import enums as enums_api
 from app.api.registrations import pt_application as pt_application_api
-from app.api import admin as admin_api
+from app.api.admin import admin as admin_api
 from app.api import message as message_api
-from app.api import stats as stats_api
+from app.api.admin import stats as stats_api
 from app.api import hold as hold_api
 from app.api.passes import locker as locker_pass_api
 from app.api.passes import clothes as clothes_pass_api

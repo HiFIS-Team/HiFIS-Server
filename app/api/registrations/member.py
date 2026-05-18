@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.db.deps import get_db
 from app.schemas.registrations.member import MemberCreate, MemberResponse, MemberUpdate
 from app.schemas.enums import MemberStatus

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.schemas.passes.clothes import ClothesPassCreate, ClothesPassUpdate, ClothesPassResponse
 from app.services.passes import clothes as clothes_pass_service
 

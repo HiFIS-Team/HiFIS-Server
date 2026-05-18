@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.schemas.passes.locker import LockerPassCreate, LockerPassUpdate, LockerPassResponse
 from app.services.passes import locker as locker_pass_service
 

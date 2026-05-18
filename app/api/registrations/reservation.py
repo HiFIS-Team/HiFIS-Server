@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.schemas.registrations.reservation import ReservationCreate, ReservationResponse
 from app.services.registrations import reservation as reservation_service
 

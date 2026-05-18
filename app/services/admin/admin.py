@@ -8,9 +8,9 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.models.branch import Branch
-from app.schemas.admin import (
+from app.schemas.admin.admin import (
     AdminCreate,
     AdminRole,
     LoginRequest,

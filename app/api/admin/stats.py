@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
-from app.models.admin import Admin
-from app.schemas.stats import StatsResponse
-from app.services import stats as stats_service
+from app.models.admin.admin import Admin
+from app.schemas.admin.stats import StatsResponse
+from app.services.admin import stats as stats_service
 
 admin_router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
 

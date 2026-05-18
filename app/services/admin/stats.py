@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.api.deps import resolve_branch_filter
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.models.registrations.member import Member
 from app.models.registrations.pt_application import PTApplication
 from app.schemas.enums import (
@@ -15,7 +15,7 @@ from app.schemas.enums import (
     Motivation,
     Referral,
 )
-from app.schemas.stats import StatItem, StatsResponse
+from app.schemas.admin.stats import StatItem, StatsResponse
 
 def _current_month_range() -> tuple[datetime, datetime]:
     """이번 달 시작 / 다음 달 시작 반환 (created_at 필터용)"""

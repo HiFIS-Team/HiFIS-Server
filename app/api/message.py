@@ -8,7 +8,7 @@ from app.db.deps import get_db
 from app.schemas.message import MessageResponse, MessageSendRequest
 from app.services import message as message_service
 from app.api.deps import get_current_admin
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.schemas.enums import MessageSourceType, MessageStatus, TriggerType
 
 # Internal - 스케줄러 또는 다른 서비스에서 호출 (인증 없음, 사내용)

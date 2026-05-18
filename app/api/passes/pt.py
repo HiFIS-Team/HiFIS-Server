@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.db.deps import get_db
 from app.schemas.passes.pt import PTPassCreate, PTPassUpdate, PTPassResponse
 from app.services.passes import pt as pt_pass_service

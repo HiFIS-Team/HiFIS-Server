@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.registrations.pt_application import PTApplication
 from app.api.deps import assert_branch_access, resolve_branch_filter
-from app.models.admin import Admin
+from app.models.admin.admin import Admin
 from app.models.branch import Branch
 from app.models.passes.pt import PTPass
 from app.schemas.passes.pt import PTPassCreate, PTPassUpdate
