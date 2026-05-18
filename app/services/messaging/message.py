@@ -11,24 +11,18 @@ from sqlalchemy import func
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.schemas.enums import MessageSourceType, MessageStatus, TriggerType
-from app.models.branch import Branch
 from app.models.messaging.message import Message
 from app.schemas.messaging.message import MessageSendRequest
-from app.services.messaging import solapi
-from app.utils.masking import mask_phone
+from app.services.branch import get_branch
 from app.services.messaging import message_templates, solapi
+from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
 
 def send_message(db: Session, data: MessageSendRequest) -> Message:
     """알림톡 발송 흐름: 지점 조회 → 양식 렌더링 → Solapi 발송 → 이력 저장"""
-    # 1. 지점 조회 (branch_name 치환 + branch_id 검증)
-    branch = db.query(Branch).filter(Branch.id == data.branch_id).first()
-    if branch is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 지점입니다.",
-        )
+    # 1. 지점 조회 (branch_name 치환 + branch_id 검증, 없으면 404)
+    branch = get_branch(db, data.branch_id)
 
     # 2. 트리거 양식 렌더링 (이름·지점정보 치환, body_override 있으면 우선)
     content = message_templates.render_message(

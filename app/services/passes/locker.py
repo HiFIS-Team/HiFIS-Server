@@ -5,24 +5,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
-from app.models.branch import Branch
 from app.models.passes.locker import LockerPass
 from app.models.registrations.member import Member
 from app.schemas.passes.locker import LockerPassCreate, LockerPassUpdate
+from app.services.branch import ensure_branch_exists
 
-def _ensure_branch_exists(db: Session, branch_id: UUID) -> None:
-    """지점 존재 검증 - 없으면 404"""
-    branch = db.query(Branch).filter(Branch.id == branch_id).first()
-    if branch is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 지점입니다.",
-        )
 
 def create_locker_pass(db: Session, data: LockerPassCreate, current_admin: Admin) -> LockerPass:
     """락커 상품 등록"""
     assert_branch_access(current_admin, data.branch_id)
-    _ensure_branch_exists(db, data.branch_id)
+    ensure_branch_exists(db, data.branch_id)
 
     pass_obj = LockerPass(
         branch_id=data.branch_id,

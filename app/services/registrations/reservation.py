@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.schemas.enums import MessageSourceType, TriggerType
 from app.schemas.messaging.message import MessageSendRequest
+from app.services.branch import ensure_branch_exists
 from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
-from app.models.branch import Branch
 from app.models.registrations.reservation import Reservation
 from app.schemas.registrations.reservation import ReservationCreate
 from app.utils.masking import mask_phone
@@ -18,13 +18,8 @@ logger = logging.getLogger(__name__)
 
 def create_reservation(db: Session, data: ReservationCreate) -> Reservation:
     """예약 신청 생성 - 지점 존재 검증 후 저장 (Public)"""
-    branch = db.query(Branch).filter(Branch.id == data.branch_id).first()
-    if branch is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 지점입니다."
-        )
-    
+    ensure_branch_exists(db, data.branch_id)
+
     reservation = Reservation(
         branch_id=data.branch_id,
         name=data.name,

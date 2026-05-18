@@ -9,13 +9,13 @@ from app.core.security import (
     verify_password,
 )
 from app.models.admin.admin import Admin
-from app.models.branch import Branch
 from app.schemas.admin.admin import (
     AdminCreate,
     AdminRole,
     LoginRequest,
     TokenResponse,
 )
+from app.services.branch import ensure_branch_exists
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +40,7 @@ def create_fc(db: Session, data: AdminCreate) -> Admin:
             status_code=status.HTTP_409_CONFLICT,
             detail="이미 사용중인 이메일입니다.",
         )
-    if db.query(Branch).filter(Branch.id == data.branch_id).first() is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 지점입니다."
-        )
+    ensure_branch_exists(db, data.branch_id)
     
     admin = Admin(
         email=data.email,

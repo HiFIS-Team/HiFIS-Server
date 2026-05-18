@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.schemas.enums import MemberStatus, MessageSourceType, TriggerType
 from app.schemas.messaging.message import MessageSendRequest
+from app.services.branch import ensure_branch_exists
 from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
-from app.models.branch import Branch
 from app.models.registrations.pt_application import PTApplication
 from app.models.passes.pt import PTPass
 from app.schemas.registrations.pt_application import (
@@ -23,13 +23,6 @@ from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
 
-def _ensure_branch_exists(db: Session, branch_id: UUID) -> None:
-    """지점 존재 검증"""
-    if db.query(Branch).filter(Branch.id == branch_id).first() is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 지점입니다."
-        )
 
 def _ensure_pt_pass_match(db: Session, pt_pass_id: UUID, branch_id: UUID) -> None:
     """수강권 존재 + 해당 지점 수강권인지 검증"""
@@ -47,7 +40,7 @@ def _ensure_pt_pass_match(db: Session, pt_pass_id: UUID, branch_id: UUID) -> Non
     
 def create_pt_application(db: Session, data: PTApplicationCreate) -> PTApplication:
     """PT 신청서 생성 - 지점/수강권 검증 후 저장"""
-    _ensure_branch_exists(db, data.branch_id)
+    ensure_branch_exists(db, data.branch_id)
     _ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
 
     application = PTApplication(

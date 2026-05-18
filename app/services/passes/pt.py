@@ -6,23 +6,15 @@ from sqlalchemy.orm import Session
 from app.models.registrations.pt_application import PTApplication
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
-from app.models.branch import Branch
 from app.models.passes.pt import PTPass
 from app.schemas.passes.pt import PTPassCreate, PTPassUpdate
+from app.services.branch import ensure_branch_exists
 
-def _ensure_branch_exists(db: Session, branch_id: UUID) -> None:
-    """지점 존재 검증 - 없으면 404"""
-    branch = db.query(Branch).filter(Branch.id == branch_id).first()
-    if branch is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 지점입니다."
-        )
-    
+
 def create_pt_pass(db: Session, data: PTPassCreate, current_admin: Admin) -> PTPass:
     """수강권 등록 - 지점 존재 검증 후 저장"""
     assert_branch_access(current_admin, data.branch_id)
-    _ensure_branch_exists(db, data.branch_id)
+    ensure_branch_exists(db, data.branch_id)
 
     pass_obj = PTPass(
         branch_id=data.branch_id,
