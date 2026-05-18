@@ -75,6 +75,7 @@ alembic upgrade head
 `alembic` 마이그레이션 후 직접 DB에 INSERT하거나, Python 셸로:
 
 ```python
+from app.models.branch import Branch
 from app.db.session import SessionLocal
 from app.models.admin.admin import Admin
 from app.core.security import hash_password
