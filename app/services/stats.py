@@ -7,8 +7,8 @@ from sqlalchemy import func
 
 from app.api.deps import resolve_branch_filter
 from app.models.admin import Admin
-from app.models.member import Member
-from app.models.pt_application import PTApplication
+from app.models.registrations.member import Member
+from app.models.registrations.pt_application import PTApplication
 from app.schemas.enums import (
     MOTIVATION_LABELS,
     REFERRAL_LABELS,

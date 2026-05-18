@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.models.pt_application import PTApplication
+from app.models.registrations.pt_application import PTApplication
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch

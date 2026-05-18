@@ -13,12 +13,12 @@ from app.db.deps import get_db
 
 from app.core.config import settings
 from app.api import branch as branch_api
-from app.api import reservation as reservation_api
+from app.api.registrations import reservation as reservation_api
 from app.api.passes import membership as membership_pass_api
 from app.api.passes import pt as pt_pass_api
-from app.api import member as member_api
+from app.api.registrations import member as member_api
 from app.api import enums as enums_api
-from app.api import pt_application as pt_application_api
+from app.api.registrations import pt_application as pt_application_api
 from app.api import admin as admin_api
 from app.api import message as message_api
 from app.api import stats as stats_api

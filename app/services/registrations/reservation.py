@@ -10,8 +10,8 @@ from app.services import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
-from app.models.reservation import Reservation
-from app.schemas.reservation import ReservationCreate
+from app.models.registrations.reservation import Reservation
+from app.schemas.registrations.reservation import ReservationCreate
 from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)

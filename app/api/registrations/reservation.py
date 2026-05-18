@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
 from app.models.admin import Admin
-from app.schemas.reservation import ReservationCreate, ReservationResponse
-from app.services import reservation as reservation_service
+from app.schemas.registrations.reservation import ReservationCreate, ReservationResponse
+from app.services.registrations import reservation as reservation_service
 
 # Public = 네이버 플레이스 연동에서 예약 정보 전송 (인증 불필요)
 public_router = APIRouter(prefix="/reservations", tags=["reservations"])

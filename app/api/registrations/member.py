@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.models.admin import Admin
 from app.db.deps import get_db
-from app.schemas.member import MemberCreate, MemberResponse, MemberUpdate
+from app.schemas.registrations.member import MemberCreate, MemberResponse, MemberUpdate
 from app.schemas.enums import MemberStatus
-from app.services import member as member_service
+from app.services.registrations import member as member_service
 
 # Public - 회원가입 신청서 제출 (인증 불필요)
 public_router = APIRouter(prefix="/members", tags=["members"])

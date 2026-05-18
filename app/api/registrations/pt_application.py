@@ -7,13 +7,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.models.admin import Admin
 from app.db.deps import get_db
-from app.schemas.pt_application import (
+from app.schemas.registrations.pt_application import (
     PTApplicationCreate,
     PTApplicationResponse,
     PTApplicationUpdate,
 )
 from app.schemas.enums import MemberStatus
-from app.services import pt_application as pt_application_service
+from app.services.registrations import pt_application as pt_application_service
 
 # Public - PT 신청서 제출 (인증 불필요)
 public_router = APIRouter(prefix="/pt-applications", tags=["pt-applications"])

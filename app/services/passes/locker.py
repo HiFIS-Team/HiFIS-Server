@@ -7,7 +7,7 @@ from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.passes.locker import LockerPass
-from app.models.member import Member
+from app.models.registrations.member import Member
 from app.schemas.passes.locker import LockerPassCreate, LockerPassUpdate
 
 def _ensure_branch_exists(db: Session, branch_id: UUID) -> None:

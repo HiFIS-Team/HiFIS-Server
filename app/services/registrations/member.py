@@ -12,11 +12,11 @@ from app.services import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
-from app.models.member import Member
+from app.models.registrations.member import Member
 from app.models.passes.clothes import ClothesPass
 from app.models.passes.locker import LockerPass
 from app.models.passes.membership import MembershipPass
-from app.schemas.member import MemberCreate, MemberStatusUpdate, MemberUpdate, MemberStatus
+from app.schemas.registrations.member import MemberCreate, MemberStatusUpdate, MemberUpdate, MemberStatus
 from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)

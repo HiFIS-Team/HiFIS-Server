@@ -8,11 +8,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
-from app.models.member import Member
+from app.models.registrations.member import Member
 from app.models.message import Message
 from app.models.hold import Hold
-from app.models.pt_application import PTApplication
-from app.models.reservation import Reservation
+from app.models.registrations.pt_application import PTApplication
+from app.models.registrations.reservation import Reservation
 from app.schemas.enums import(
     MemberStatus,
     MessageSourceType,
