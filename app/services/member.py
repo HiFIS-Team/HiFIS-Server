@@ -13,9 +13,9 @@ from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
 from app.models.member import Member
-from app.models.clothes_pass import ClothesPass
-from app.models.locker_pass import LockerPass
-from app.models.membership_pass import MembershipPass
+from app.models.passes.clothes import ClothesPass
+from app.models.passes.locker import LockerPass
+from app.models.passes.membership import MembershipPass
 from app.schemas.member import MemberCreate, MemberStatusUpdate, MemberUpdate, MemberStatus
 from app.utils.masking import mask_phone
 

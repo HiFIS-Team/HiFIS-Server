@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.models.admin import Admin
 from app.db.deps import get_db
-from app.schemas.pt_pass import PTPassCreate, PTPassUpdate, PTPassResponse
-from app.services import pt_pass as pt_pass_service
+from app.schemas.passes.pt import PTPassCreate, PTPassUpdate, PTPassResponse
+from app.services.passes import pt as pt_pass_service
 
 # Public - PT 신청서에서 지점별 수강권 목록 자동 로드 (인증 불필요)
 public_router = APIRouter(prefix="/pt-passes", tags=["pt-passes"])

@@ -6,12 +6,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
 from app.models.admin import Admin
-from app.schemas.membership_pass import (
+from app.schemas.passes.membership import (
     MembershipPassCreate,
     MembershipPassUpdate,
     MembershipPassResponse
 )
-from app.services import membership_pass as membership_pass_service
+from app.services.passes import membership as membership_pass_service
 
 # Public - 회원가입 신청서에서 지점별 회원권 목록 자동 로드
 public_router = APIRouter(prefix="/membership-passes", tags=["membership-passes"])

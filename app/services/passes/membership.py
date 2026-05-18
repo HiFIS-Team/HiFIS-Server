@@ -7,8 +7,8 @@ from app.models.member import Member
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin import Admin
 from app.models.branch import Branch
-from app.models.membership_pass import MembershipPass
-from app.schemas.membership_pass import MembershipPassCreate, MembershipPassUpdate
+from app.models.passes.membership import MembershipPass
+from app.schemas.passes.membership import MembershipPassCreate, MembershipPassUpdate
 
 
 def _ensure_branch_exists(db: Session, branch_id: UUID) -> None:

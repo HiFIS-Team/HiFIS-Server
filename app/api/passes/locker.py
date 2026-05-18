@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
 from app.models.admin import Admin
-from app.schemas.locker_pass import LockerPassCreate, LockerPassUpdate, LockerPassResponse
-from app.services import locker_pass as locker_pass_service
+from app.schemas.passes.locker import LockerPassCreate, LockerPassUpdate, LockerPassResponse
+from app.services.passes import locker as locker_pass_service
 
 # Public - 회원가입 신청서에서 지점별 락커 상품 자동 로드
 public_router = APIRouter(prefix="/locker-passes", tags=["locker-passes"])
