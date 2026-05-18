@@ -1,7 +1,8 @@
 from datetime import date, datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.enums import (
     Gender,
@@ -10,6 +11,20 @@ from app.schemas.enums import (
     Referral,
 )
 from app.utils.validators import is_valid_phone, normalize_phone
+
+_KST = ZoneInfo("Asia/Seoul")
+_MIN_BIRTH_DATE = date(1900, 1, 1)
+
+
+def _validate_birth_date(v: date) -> date:
+    """생년월일 sanity - 1900 이전 / 미래 차단"""
+    today = datetime.now(_KST).date()
+    if v < _MIN_BIRTH_DATE:
+        raise ValueError("생년월일이 너무 과거입니다.")
+    if v > today:
+        raise ValueError("생년월일은 오늘 이후일 수 없습니다.")
+    return v
+
 
 class PTApplicationCreate(BaseModel):
     """PT 신청 (Public)"""
@@ -34,14 +49,25 @@ class PTApplicationCreate(BaseModel):
         if not is_valid_phone(v):
             raise ValueError("전화번호 형식이 올바르지 않습니다.")
         return normalize_phone(v)
-    
+
     @field_validator("agreed_notice")
     @classmethod
     def _must_agree(cls, v: bool) -> bool:
         if not v:
             raise ValueError("유의사항을 확인해야 합니다.")
         return v
-    
+
+    @field_validator("birth_date")
+    @classmethod
+    def _check_birth(cls, v: date) -> date:
+        return _validate_birth_date(v)
+
+    @model_validator(mode="after")
+    def _check_period(self):
+        if self.end_date < self.start_date:
+            raise ValueError("종료일은 시작일보다 빠를 수 없습니다.")
+        return self
+
 class PTApplicationUpdate(BaseModel):
     """PT 신청 정보 수정 (Admin, 부분 수정)"""
     pt_pass_id: UUID | None = None
@@ -65,6 +91,21 @@ class PTApplicationUpdate(BaseModel):
         if not is_valid_phone(v):
             raise ValueError("전화번호 형식이 올바르지 않습니다.")
         return normalize_phone(v)
+
+    @field_validator("birth_date")
+    @classmethod
+    def _check_birth(cls, v: date | None) -> date | None:
+        if v is None:
+            return v
+        return _validate_birth_date(v)
+
+    @model_validator(mode="after")
+    def _check_period(self):
+        # 부분 수정 - 둘 다 들어왔을 때만 비교
+        if self.start_date is not None and self.end_date is not None:
+            if self.end_date < self.start_date:
+                raise ValueError("종료일은 시작일보다 빠를 수 없습니다.")
+        return self
 
 class PTApplicationStatusUpdate(BaseModel):
     """PT 신청 상태 변경 (Internal, 스케줄러 전용)"""
