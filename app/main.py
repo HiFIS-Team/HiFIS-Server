@@ -6,6 +6,11 @@ from app.services.scheduler import start_scheduler, stop_scheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from fastapi import Depends, HTTPException
+from app.db.deps import get_db
+
 from app.core.config import settings
 from app.api import branch as branch_api
 from app.api import reservation as reservation_api
@@ -78,3 +83,11 @@ app.include_router(clothes_pass_api.admin_router)
 @app.get("/")
 def read_root():
     return {"message": "Hello HiFIS!!"}
+
+@app.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "db": "ok"}
+    except Exception:
+        raise HTTPException(503, "DB unavailable")
