@@ -1,4 +1,5 @@
 from uuid import UUID
+from datetime import date
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.schemas.pt_application import (
     PTApplicationResponse,
     PTApplicationUpdate,
 )
+from app.schemas.enums import MemberStatus
 from app.services import pt_application as pt_application_service
 
 # Public - PT 신청서 제출 (인증 불필요)
@@ -30,11 +32,23 @@ admin_router = APIRouter(prefix="/admin/pt-applications", tags=["admin-pt-applic
 @admin_router.get("", response_model=list[PTApplicationResponse])
 def admin_list_pt_application(
     branch_id: UUID | None = None,
+    name: str | None = None,
+    phone: str | None = None,
+    status: MemberStatus | None = None,
+    start_date_from: date | None = None,
+    start_date_to: date | None = None,
+    end_date_from: date | None = None,
+    end_date_to: date | None = None,
     db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin)
+    current_admin: Admin = Depends(get_current_admin),
 ):
-    """PT 신청 목록 조회 (Admin) - branch_id 옵션 필터"""
-    return pt_application_service.list_pt_applications(db, branch_id, current_admin)
+    """PT 신청 목록 조회 (Admin, FC는 자기 지점만) - 이름·전화·상태·기간 필터"""
+    return pt_application_service.list_pt_applications(
+        db, branch_id, name, phone, status,
+        start_date_from, start_date_to,
+        end_date_from, end_date_to,
+        current_admin,
+    )
 
 @admin_router.get("/{application_id}", response_model=PTApplicationResponse)
 def admin_get_pt_application(

@@ -1,5 +1,7 @@
 import logging
 from uuid import UUID
+import re
+from datetime import date
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -14,7 +16,7 @@ from app.models.member import Member
 from app.models.clothes_pass import ClothesPass
 from app.models.locker_pass import LockerPass
 from app.models.membership_pass import MembershipPass
-from app.schemas.member import MemberCreate, MemberStatusUpdate, MemberUpdate
+from app.schemas.member import MemberCreate, MemberStatusUpdate, MemberUpdate, MemberStatus
 from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
@@ -127,16 +129,41 @@ def create_member(db: Session, data: MemberCreate) -> Member:
     return member
 
 def list_members(
-        db: Session, 
+        db: Session,
         branch_id: UUID | None,
+        name: str | None,
+        phone: str | None,
+        status: MemberStatus | None,
+        start_date_from: date | None,
+        start_date_to: date | None,
+        end_date_from: date | None,
+        end_date_to: date | None,
         current_admin: Admin,
 ) -> list[Member]:
+    """회원 목록 조회 + 필터 (FC는 자기 지점 강제)"""
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
 
     query = db.query(Member)
     if effective_branch_id is not None:
         query = query.filter(Member.branch_id == effective_branch_id)
+    if name:
+        query = query.filter(Member.name.ilike(f"%{name}%"))
+    if phone:
+        phone_digits = re.sub(r"\D", "", phone)
+        if phone_digits:
+            query = query.filter(Member.phone.like(f"%{phone_digits}%"))
+    if status is not None:
+        query = query.filter(Member.status == status.value)
+    if start_date_from is not None:
+        query = query.filter(Member.start_date >= start_date_from)
+    if start_date_to is not None:
+        query = query.filter(Member.start_date <= start_date_to)
+    if end_date_from is not None:
+        query = query.filter(Member.end_date >= end_date_from)
+    if end_date_to is not None:
+        query = query.filter(Member.end_date <= end_date_to)
     return query.order_by(Member.created_at.desc()).all()
+
 
 def get_member(db: Session, member_id: UUID, current_admin: Admin) -> Member:
     member = db.query(Member).filter(Member.id == member_id).first()

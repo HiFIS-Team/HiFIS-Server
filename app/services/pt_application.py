@@ -1,10 +1,12 @@
 import logging
 from uuid import UUID
+import re
+from datetime import date
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.schemas.enums import MessageSourceType, TriggerType
+from app.schemas.enums import MemberStatus, MessageSourceType, TriggerType
 from app.schemas.message import MessageSendRequest
 from app.services import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
@@ -90,13 +92,40 @@ def create_pt_application(db: Session, data: PTApplicationCreate) -> PTApplicati
         
     return application
 
-def list_pt_applications(db: Session, branch_id: UUID | None, current_admin: Admin,) -> list[PTApplication]:
-    """PT 신청 목록 조회 - branch_id 주면 해당 지점만"""
+def list_pt_applications(
+        db: Session,
+        branch_id: UUID | None,
+        name: str | None,
+        phone: str | None,
+        status: MemberStatus | None,
+        start_date_from: date | None,
+        start_date_to: date | None,
+        end_date_from: date | None,
+        end_date_to: date | None,
+        current_admin: Admin,
+) -> list[PTApplication]:
+    """PT 신청 목록 조회 + 필터 (FC는 자기 지점 강제)"""
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
 
     query = db.query(PTApplication)
     if effective_branch_id is not None:
         query = query.filter(PTApplication.branch_id == effective_branch_id)
+    if name:
+        query = query.filter(PTApplication.name.ilike(f"%{name}%"))
+    if phone:
+        phone_digits = re.sub(r"\D", "", phone)
+        if phone_digits:
+            query = query.filter(PTApplication.phone.like(f"%{phone_digits}%"))
+    if status is not None:
+        query = query.filter(PTApplication.status == status.value)
+    if start_date_from is not None:
+        query = query.filter(PTApplication.start_date >= start_date_from)
+    if start_date_to is not None:
+        query = query.filter(PTApplication.start_date <= start_date_to)
+    if end_date_from is not None:
+        query = query.filter(PTApplication.end_date >= end_date_from)
+    if end_date_to is not None:
+        query = query.filter(PTApplication.end_date <= end_date_to)
     return query.order_by(PTApplication.created_at.desc()).all()
 
 def get_pt_application(db: Session, application_id: UUID, current_admin: Admin,) -> PTApplication:
