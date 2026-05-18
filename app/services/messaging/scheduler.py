@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models.registrations.member import Member
-from app.models.message import Message
+from app.models.messaging.message import Message
 from app.models.hold import Hold
 from app.models.registrations.pt_application import PTApplication
 from app.models.registrations.reservation import Reservation
@@ -19,8 +19,8 @@ from app.schemas.enums import(
     MessageStatus,
     TriggerType,
 )
-from app.schemas.message import MessageSendRequest
-from app.services import message as message_service
+from app.schemas.messaging.message import MessageSendRequest
+from app.services.messaging import message as message_service
 
 logger = logging.getLogger(__name__)
 

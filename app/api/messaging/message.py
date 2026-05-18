@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.db.deps import get_db
-from app.schemas.message import MessageResponse, MessageSendRequest
-from app.services import message as message_service
+from app.schemas.messaging.message import MessageResponse, MessageSendRequest
+from app.services.messaging import message as message_service
 from app.api.deps import get_current_admin
 from app.models.admin.admin import Admin
 from app.schemas.enums import MessageSourceType, MessageStatus, TriggerType

@@ -7,8 +7,8 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.schemas.enums import MessageSourceType, TriggerType
-from app.schemas.message import MessageSendRequest
-from app.services import message as message_service
+from app.schemas.messaging.message import MessageSendRequest
+from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.models.branch import Branch

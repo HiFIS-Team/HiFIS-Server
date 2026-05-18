@@ -1,7 +1,7 @@
 import logging
 
 from contextlib import asynccontextmanager
-from app.services.scheduler import start_scheduler, stop_scheduler
+from app.services.messaging.scheduler import start_scheduler, stop_scheduler
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +20,7 @@ from app.api.registrations import member as member_api
 from app.api import enums as enums_api
 from app.api.registrations import pt_application as pt_application_api
 from app.api.admin import admin as admin_api
-from app.api import message as message_api
+from app.api.messaging import message as message_api
 from app.api.admin import stats as stats_api
 from app.api import hold as hold_api
 from app.api.passes import locker as locker_pass_api

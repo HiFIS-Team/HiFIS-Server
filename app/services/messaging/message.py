@@ -12,11 +12,11 @@ from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.schemas.enums import MessageSourceType, MessageStatus, TriggerType
 from app.models.branch import Branch
-from app.models.message import Message
-from app.schemas.message import MessageSendRequest
-from app.services import solapi
+from app.models.messaging.message import Message
+from app.schemas.messaging.message import MessageSendRequest
+from app.services.messaging import solapi
 from app.utils.masking import mask_phone
-from app.services import message_templates, solapi
+from app.services.messaging import message_templates, solapi
 
 logger = logging.getLogger(__name__)
 

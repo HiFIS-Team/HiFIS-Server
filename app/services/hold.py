@@ -15,8 +15,8 @@ from app.models.registrations.member import Member
 from app.models.registrations.pt_application import PTApplication
 from app.schemas.enums import MessageSourceType, TriggerType
 from app.schemas.hold import HoldCreate
-from app.schemas.message import MessageSendRequest
-from app.services import claude, message as message_service
+from app.schemas.messaging.message import MessageSendRequest
+from app.services.messaging import claude, message as message_service
 
 logger = logging.getLogger(__name__)
 
