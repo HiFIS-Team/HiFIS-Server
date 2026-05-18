@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.config import settings
 from app.api import branch as branch_api
 from app.api import reservation as reservation_api
 from app.api import membership_pass as membership_pass_api
@@ -38,6 +40,16 @@ logging.basicConfig(
 )
 
 app = FastAPI(title="HiFIS Server", lifespan=lifespan)
+
+if settings.CORS_ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ALLOWED_ORIGINS,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        max_age=3600,
+    )
 
 app.include_router(branch_api.public_router)
 app.include_router(branch_api.admin_router)
