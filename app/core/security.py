@@ -25,19 +25,31 @@ def verify_password(password: str, hashed: str) -> bool:
 # === JWT 토큰 ===
 
 def create_access_token(subject: str) -> str:
-    """access token 발급 - sub에 admin.id 저장"""
+    """access token 발급 - 짧은 만료, API 호출용"""
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.JWT_EXPIRE_MINUTES
     )
-    payload = {"sub": subject, "exp": expire}
+    payload = {"sub": subject, "exp": expire, "type": "access"}
     return jwt.encode(
         payload,
         settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,
     )
 
-def decode_access_token(token: str) -> dict | None:
-    """JWT 검증 - 실패/만료 시 None"""
+def create_refresh_token(subject: str) -> str:
+    """refresh token 발급 - 긴 만료, 자동 로그인용"""
+    expire = datetime.now(timezone.utc) + timedelta(
+        days=settings.JWT_REFRESH_EXPIRE_DAYS
+    )
+    payload = {"sub": subject, "exp": expire, "type": "refresh"}
+    return jwt.encode(
+        payload,
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+def decode_token(token: str) -> dict | None:
+    """JWT 검증 - 실패/만료 시 None (type은 호출자가 확인)"""
     try:
         return jwt.decode(
             token,
