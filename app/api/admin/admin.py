@@ -3,14 +3,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_super_admin
+from app.api.deps import get_current_admin, require_super_admin
 from app.db.deps import get_db
 from app.models.admin.admin import Admin
 from app.schemas.admin.admin import (
     AdminResponse,
+    AdminSelfUpdate,
     AdminSignup,
     EmailVerifyRequest,
     LoginRequest,
+    PasswordChangeRequest,
     RefreshRequest,
     TokenResponse,
 )
@@ -78,3 +80,29 @@ def delete_admin(
 ):
     """FC 계정 삭제 (SUPER_ADMIN 전용)"""
     admin_service.delete_admin(db, admin_id)
+
+# 본인 계정 - 로그인한 관리자 누구나
+me_router = APIRouter(prefix="/admin/me", tags=["admin-me"])
+
+@me_router.get("", response_model=AdminResponse)
+def get_me(current: Admin = Depends(get_current_admin)):
+    """현재 로그인한 관리자 정보"""
+    return current
+
+@me_router.patch("", response_model=AdminResponse)
+def update_me(
+    payload: AdminSelfUpdate,
+    db: Session = Depends(get_db),
+    current: Admin = Depends(get_current_admin),
+):
+    """본인 정보 수정 (이름)"""
+    return admin_service.update_me(db, current, payload)
+
+@me_router.patch("/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    current: Admin = Depends(get_current_admin),
+):
+    """비밀번호 변경"""
+    admin_service.change_password(db, current, payload)
