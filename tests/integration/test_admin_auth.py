@@ -131,3 +131,33 @@ class TestApprovalFlow:
         self._signup_and_verify(client, db, branch)
         res = client.get("/admin/admins/pending")
         assert res.status_code == 401
+
+
+class TestDeleteAdmin:
+
+    def test_delete_fc(self, client, db, fc_admin, auth_super):
+        """FC 계정 삭제 → 204, DB에서 제거됨"""
+        res = client.delete(
+            f"/admin/admins/{fc_admin.id}", headers=auth_super
+        )
+        assert res.status_code == 204
+        assert db.query(Admin).filter(Admin.id == fc_admin.id).first() is None
+
+    def test_delete_super_admin_rejected(self, client, super_admin, auth_super):
+        """SUPER_ADMIN 계정 삭제 시도 → 400 (보호)"""
+        res = client.delete(
+            f"/admin/admins/{super_admin.id}", headers=auth_super
+        )
+        assert res.status_code == 400
+
+    def test_delete_nonexistent_404(self, client, auth_super):
+        """존재하지 않는 계정 삭제 → 404"""
+        res = client.delete(
+            f"/admin/admins/{uuid4()}", headers=auth_super
+        )
+        assert res.status_code == 404
+
+    def test_delete_requires_auth(self, client):
+        """토큰 없이 삭제 시도 → 401"""
+        res = client.delete(f"/admin/admins/{uuid4()}")
+        assert res.status_code == 401
