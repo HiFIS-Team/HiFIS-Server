@@ -11,6 +11,7 @@ from app.schemas.admin.admin import (
     AdminSignup,
     EmailVerifyRequest,
     LoginRequest,
+    RefreshRequest,
     TokenResponse,
 )
 from app.services.admin import admin as admin_service
@@ -54,6 +55,12 @@ def approve(
 ):
     """FC 가입 승인 - PENDING_APPROVAL → ACTIVE (SUPER_ADMIN 전용)"""
     return admin_service.approve_admin(db, admin_id)
+
+@public_router.post("/refresh", response_model=TokenResponse)
+def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
+    """refresh token으로 access token 재발급 (자동 로그인)"""
+    return admin_service.refresh_access_token(db, payload.refresh_token)
+
 
 @admin_router.get("", response_model=list[AdminResponse])
 def list_admins(
