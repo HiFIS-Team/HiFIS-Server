@@ -27,7 +27,11 @@ from app.schemas.admin.admin import (
     TokenResponse,
 )
 from app.services.branch import ensure_branch_exists
-from app.services.messaging.email import send_verification_email
+from app.models.admin.password_reset_token import PasswordResetToken
+from app.services.messaging.email import (
+    send_password_reset_email,
+    send_verification_email,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +147,68 @@ def resend_verification(db: Session, email: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="이미 이메일 인증이 완료된 계정입니다.",
         )
+
+def request_password_reset(db: Session, email: str) -> None:
+    """비밀번호 재설정 요청 - 인증번호 생성 + 메일 발송"""
+    admin = db.query(Admin).filter(Admin.email == email).first()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 계정입니다.",
+        )
+
+    # 기존 재설정 토큰 폐기
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.admin_id == admin.id
+    ).delete()
+
+    code = _generate_code()
+    token = PasswordResetToken(
+        admin_id=admin.id,
+        code=code,
+        expires_at=datetime.now(KST) + timedelta(minutes=_CODE_EXPIRE_MINUTES),
+    )
+    db.add(token)
+    db.commit()
+
+    if not send_password_reset_email(admin.email, admin.name, code):
+        logger.warning("비밀번호 재설정 메일 발송 실패: admin_id=%s", admin.id)
+    logger.info("비밀번호 재설정 요청: admin_id=%s", admin.id)
+
+def confirm_password_reset(
+    db: Session, email: str, code: str, new_password: str
+) -> None:
+    """비밀번호 재설정 확정 - 인증번호 검증 후 비번 교체"""
+    admin = db.query(Admin).filter(Admin.email == email).first()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 계정입니다.",
+        )
+
+    token = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.admin_id == admin.id,
+            PasswordResetToken.code == code,
+        )
+        .first()
+    )
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="인증번호가 올바르지 않습니다.",
+        )
+    if token.expires_at < datetime.now(KST):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="인증번호가 만료되었습니다. 다시 요청해 주세요.",
+        )
+
+    admin.password_hash = hash_password(new_password)
+    db.delete(token)
+    db.commit()
+    logger.info("비밀번호 재설정 완료: admin_id=%s", admin.id)
 
     # 기존 인증번호 모두 폐기
     db.query(EmailVerificationToken).filter(
