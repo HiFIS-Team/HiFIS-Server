@@ -19,9 +19,11 @@ from app.models.admin.admin import Admin
 from app.models.admin.email_verification_token import EmailVerificationToken
 from app.schemas.admin.admin import (
     AdminRole,
+    AdminSelfUpdate,
     AdminSignup,
     AdminStatus,
     LoginRequest,
+    PasswordChangeRequest,
     TokenResponse,
 )
 from app.services.branch import ensure_branch_exists
@@ -238,3 +240,26 @@ def delete_admin(db: Session, admin_id: UUID) -> None:
     db.delete(admin)
     db.commit()
     logger.info("FC 계정 삭제: admin_id=%s, email=%s", admin_id, admin.email)
+
+def update_me(db: Session, current_admin: Admin, data: AdminSelfUpdate) -> Admin:
+    """본인 정보 수정 (이름)"""
+    current_admin.name = data.name
+    db.commit()
+    db.refresh(current_admin)
+    logger.info("관리자 본인 정보 수정: admin_id=%s", current_admin.id)
+    return current_admin
+
+
+def change_password(
+    db: Session, current_admin: Admin, data: PasswordChangeRequest
+) -> None:
+    """비밀번호 변경 - 현재 비번 확인 후 교체"""
+    if not verify_password(data.current_password, current_admin.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="현재 비밀번호가 올바르지 않습니다.",
+        )
+    current_admin.password_hash = hash_password(data.new_password)
+    db.commit()
+    logger.info("관리자 비밀번호 변경: admin_id=%s", current_admin.id)
+
