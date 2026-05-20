@@ -69,11 +69,19 @@ def approve(
     """FC 가입 승인 - PENDING_APPROVAL → ACTIVE (SUPER_ADMIN 전용)"""
     return admin_service.approve_admin(db, admin_id)
 
+@admin_router.post("/{admin_id}/reject", status_code=status.HTTP_204_NO_CONTENT)
+def reject(
+    admin_id: UUID,
+    db: Session = Depends(get_db),
+    _: Admin = Depends(require_super_admin),
+):
+    """FC 가입 거부 - 승인 대기 계정 삭제 (SUPER_ADMIN 전용)"""
+    admin_service.reject_admin(db, admin_id)
+
 @public_router.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     """refresh token으로 access token 재발급 (자동 로그인)"""
     return admin_service.refresh_access_token(db, payload.refresh_token)
-
 
 @admin_router.get("", response_model=list[AdminResponse])
 def list_admins(
