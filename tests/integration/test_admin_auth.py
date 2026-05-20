@@ -161,3 +161,63 @@ class TestDeleteAdmin:
         """토큰 없이 삭제 시도 → 401"""
         res = client.delete(f"/admin/admins/{uuid4()}")
         assert res.status_code == 401
+
+
+class TestRefreshToken:
+
+    def _login(self, client):
+        """fc_admin 로그인 → 응답 body 반환"""
+        return client.post("/admin/login", json={
+            "email": "fc@test.com", "password": "test1234",
+        }).json()
+
+    def test_login_returns_both_tokens(self, client, fc_admin):
+        """로그인 응답에 access_token + refresh_token 둘 다 포함"""
+        body = self._login(client)
+        assert "access_token" in body
+        assert "refresh_token" in body
+
+    def test_refresh_issues_new_access(self, client, fc_admin):
+        """refresh_token으로 새 access 발급"""
+        login = self._login(client)
+        res = client.post("/admin/refresh", json={
+            "refresh_token": login["refresh_token"],
+        })
+        assert res.status_code == 200
+        body = res.json()
+        assert "access_token" in body
+        assert "refresh_token" in body
+
+    def test_refresh_invalid_token_401(self, client):
+        """깨진 refresh token → 401"""
+        res = client.post("/admin/refresh", json={
+            "refresh_token": "invalid.token.value",
+        })
+        assert res.status_code == 401
+
+    def test_access_token_cannot_refresh(self, client, fc_admin):
+        """access token을 refresh 엔드포인트에 넣으면 → 401 (type 검증)"""
+        login = self._login(client)
+        res = client.post("/admin/refresh", json={
+            "refresh_token": login["access_token"],
+        })
+        assert res.status_code == 401
+
+    def test_refreshed_access_works(self, client, fc_admin):
+        """refresh로 받은 새 access로 인증 API 호출 가능"""
+        login = self._login(client)
+        refreshed = client.post("/admin/refresh", json={
+            "refresh_token": login["refresh_token"],
+        }).json()
+        res = client.get("/admin/members", headers={
+            "Authorization": f"Bearer {refreshed['access_token']}",
+        })
+        assert res.status_code == 200
+
+    def test_refresh_token_rejected_as_access(self, client, fc_admin):
+        """refresh token으로 일반 API 호출 시도 → 401 (type 검증)"""
+        login = self._login(client)
+        res = client.get("/admin/members", headers={
+            "Authorization": f"Bearer {login['refresh_token']}",
+        })
+        assert res.status_code == 401
