@@ -182,3 +182,21 @@ def login(db: Session, data: LoginRequest) -> TokenResponse:
 def list_admins(db: Session) -> list[Admin]:
     """관리자 전체 목록 조회"""
     return db.query(Admin).order_by(Admin.created_at.asc()).all()
+
+def delete_admin(db: Session, admin_id: UUID) -> None:
+    """FC 계정 삭제 (SUPER_ADMIN 전용) - SUPER_ADMIN 계정은 삭제 불가"""
+    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 계정입니다.",
+        )
+    if admin.role == AdminRole.SUPER_ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SUPER_ADMIN 계정은 삭제할 수 없습니다.",
+        )
+
+    db.delete(admin)
+    db.commit()
+    logger.info("FC 계정 삭제: admin_id=%s, email=%s", admin_id, admin.email)
