@@ -148,6 +148,27 @@ def resend_verification(db: Session, email: str) -> None:
             detail="이미 이메일 인증이 완료된 계정입니다.",
         )
 
+    # 기존 인증번호 모두 폐기
+    for old in db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.admin_id == admin.id
+    ).all():
+        db.delete(old)
+
+    # 새 인증번호 생성 + 저장
+    code = _generate_code()
+    token = EmailVerificationToken(
+        admin_id=admin.id,
+        code=code,
+        expires_at=datetime.now(KST) + timedelta(minutes=_CODE_EXPIRE_MINUTES),
+    )
+    db.add(token)
+    db.commit()
+
+    if not send_verification_email(admin.email, admin.name, code):
+        logger.warning("인증번호 재발송 메일 실패: admin_id=%s", admin.id)
+    logger.info("인증번호 재발송: admin_id=%s", admin.id)
+
+
 def request_password_reset(db: Session, email: str) -> None:
     """비밀번호 재설정 요청 - 인증번호 생성 + 메일 발송"""
     admin = db.query(Admin).filter(Admin.email == email).first()
@@ -158,9 +179,10 @@ def request_password_reset(db: Session, email: str) -> None:
         )
 
     # 기존 재설정 토큰 폐기
-    db.query(PasswordResetToken).filter(
+    for old in db.query(PasswordResetToken).filter(
         PasswordResetToken.admin_id == admin.id
-    ).delete()
+    ).all():
+        db.delete(old)
 
     code = _generate_code()
     token = PasswordResetToken(
