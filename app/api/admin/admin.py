@@ -13,10 +13,13 @@ from app.schemas.admin.admin import (
     EmailVerifyRequest,
     LoginRequest,
     PasswordChangeRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
     RefreshRequest,
     ResendVerificationRequest,
     TokenResponse,
 )
+
 from app.services.admin import admin as admin_service
 
 # Public - 로그인 / 회원가입 / 이메일 인증 (인증 불필요)
@@ -48,6 +51,25 @@ def resend_verification(
     """이메일 인증번호 재발송 (만료/분실 시)"""
     admin_service.resend_verification(db, payload.email)
 
+@public_router.post(
+    "/password-reset/request", status_code=status.HTTP_204_NO_CONTENT
+)
+def password_reset_request(
+    payload: PasswordResetRequest, db: Session = Depends(get_db)
+):
+    """비밀번호 재설정 요청 - 인증번호 메일 발송"""
+    admin_service.request_password_reset(db, payload.email)
+
+@public_router.post(
+    "/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT
+)
+def password_reset_confirm(
+    payload: PasswordResetConfirm, db: Session = Depends(get_db)
+):
+    """비밀번호 재설정 확정 - 인증번호 검증 후 새 비번 적용"""
+    admin_service.confirm_password_reset(
+        db, payload.email, payload.code, payload.new_password
+    )
 
 # SUPER_ADMIN 전용 - 관리자 계정 관리
 admin_router = APIRouter(prefix="/admin/admins", tags=["admin-management"])
