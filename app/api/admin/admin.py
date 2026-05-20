@@ -62,3 +62,12 @@ def list_admins(
 ):
     """관리자 전체 목록 조회 (SUPER_ADMIN 전용)"""
     return admin_service.list_admins(db)
+
+@admin_router.delete("/{admin_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_admin(
+    admin_id: UUID,
+    db: Session = Depends(get_db),
+    _: Admin = Depends(require_super_admin),
+):
+    """FC 계정 삭제 (SUPER_ADMIN 전용)"""
+    admin_service.delete_admin(db, admin_id)
