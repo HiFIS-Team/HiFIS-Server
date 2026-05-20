@@ -130,6 +130,40 @@ def list_pending_admins(db: Session) -> list[Admin]:
         .all()
     )
 
+def resend_verification(db: Session, email: str) -> None:
+    """이메일 인증번호 재발송 - 기존 토큰 폐기 후 새로 생성"""
+    admin = db.query(Admin).filter(Admin.email == email).first()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 계정입니다.",
+        )
+    if admin.status != AdminStatus.PENDING_EMAIL.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 이메일 인증이 완료된 계정입니다.",
+        )
+
+    # 기존 인증번호 모두 폐기
+    db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.admin_id == admin.id
+    ).delete()
+
+    # 새 인증번호 생성 + 저장
+    code = _generate_code()
+    token = EmailVerificationToken(
+        admin_id=admin.id,
+        code=code,
+        expires_at=datetime.now(KST) + timedelta(minutes=_CODE_EXPIRE_MINUTES),
+    )
+    db.add(token)
+    db.commit()
+
+    if not send_verification_email(admin.email, admin.name, code):
+        logger.warning("인증번호 재발송 메일 실패: admin_id=%s", admin.id)
+    logger.info("인증번호 재발송: admin_id=%s", admin.id)
+
+
 
 def approve_admin(db: Session, admin_id: UUID) -> Admin:
     """FC 가입 승인 - PENDING_APPROVAL → ACTIVE (SUPER_ADMIN 전용)"""
