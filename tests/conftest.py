@@ -107,6 +107,17 @@ def mock_external_apis(monkeypatch):
         "app.services.messaging.claude.generate_hold_cancel_body",
         lambda **kw: "테스트용 홀딩 취소 안내 본문입니다.",
     )
+    # 이메일 발송 (FC 가입 인증 / 비밀번호 재설정) - admin 서비스가 import한 함수 패치
+    monkeypatch.setattr(
+        "app.services.admin.admin.send_verification_email",
+        lambda to_email, name, code: True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.services.admin.admin.send_password_reset_email",
+        lambda to_email, name, code: True,
+        raising=False,
+    )
 
 
 # === 도메인 fixture (지점 / 관리자) ===

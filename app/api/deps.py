@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.security import decode_access_token
+from app.core.security import decode_token
 from app.db.deps import get_db
 from app.models.admin.admin import Admin
 from app.schemas.admin.admin import AdminRole
@@ -23,9 +23,9 @@ def _extract_token(request: Request) -> str:
 def get_current_admin(request: Request, db: Session = Depends(get_db)) -> Admin:
     """JWT 검증 -> 현재 관리자 반환"""
     token = _extract_token(request)
-    payload = decode_access_token(token)
+    payload = decode_token(token)
 
-    if payload is None:
+    if payload is None or payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="유효하지 않은 토큰입니다.",

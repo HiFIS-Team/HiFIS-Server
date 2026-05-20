@@ -14,12 +14,21 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480
+    JWT_REFRESH_EXPIRE_DAYS: int = 30
 
     SOLAPI_API_KEY: str
     SOLAPI_API_SECRET: str
     SOLAPI_SENDER: str
 
     CLAUDE_API_KEY: str
+
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str
+    SMTP_PASSWORD: str
+    SMTP_FROM_NAME: str = "피트니스스타 HiFIS"
+
+    APP_BASE_URL: str = "http://localhost:8000"
 
     CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = []
 
