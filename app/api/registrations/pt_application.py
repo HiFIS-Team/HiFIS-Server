@@ -1,10 +1,11 @@
 from uuid import UUID
 from datetime import date
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
+from app.core.rate_limit import limiter
 from app.models.admin.admin import Admin
 from app.db.deps import get_db
 from app.schemas.registrations.pt_application import (
@@ -19,7 +20,9 @@ from app.services.registrations import pt_application as pt_application_service
 public_router = APIRouter(prefix="/pt-applications", tags=["pt-applications"])
 
 @public_router.post("", response_model=PTApplicationResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("30/minute")
 def create_pt_application(
+    request: Request,
     payload: PTApplicationCreate,
     db: Session = Depends(get_db),
 ):

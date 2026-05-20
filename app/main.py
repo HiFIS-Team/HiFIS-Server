@@ -6,12 +6,16 @@ from app.services.messaging.scheduler import start_scheduler, stop_scheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException
 from app.db.deps import get_db
 
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.api import branch as branch_api
 from app.api.registrations import reservation as reservation_api
 from app.api.passes import membership as membership_pass_api
@@ -45,6 +49,10 @@ logging.basicConfig(
 )
 
 app = FastAPI(title="HiFIS Server", lifespan=lifespan)
+
+# rate limiting (slowapi) - limiter 등록 + 429(Too Many Requests) 응답 핸들러
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 if settings.CORS_ALLOWED_ORIGINS:
     app.add_middleware(

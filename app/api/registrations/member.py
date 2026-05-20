@@ -1,10 +1,11 @@
 from uuid import UUID
 from datetime import date
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
+from app.core.rate_limit import limiter
 from app.models.admin.admin import Admin
 from app.db.deps import get_db
 from app.schemas.registrations.member import MemberCreate, MemberResponse, MemberUpdate
@@ -15,14 +16,14 @@ from app.services.registrations import member as member_service
 public_router = APIRouter(prefix="/members", tags=["members"])
 
 @public_router.post("", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
-def create_member(payload: MemberCreate, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def create_member(request: Request, payload: MemberCreate, db: Session = Depends(get_db)):
     """회원가입 신청 (Public)"""
     return member_service.create_member(db, payload)
 
 # Admin - 인증 의존성은 인증 도입 후 부착
 admin_router = APIRouter(prefix="/admin/members", tags=["admin-members"])
 
-@admin_router.get("", response_model=list[MemberResponse])
 @admin_router.get("", response_model=list[MemberResponse])
 def admin_list_members(
     branch_id: UUID | None = None,
