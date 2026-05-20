@@ -325,3 +325,42 @@ class TestResendVerification:
             "email": "nobody@test.com",
         })
         assert res.status_code == 404
+
+
+class TestRejectAdmin:
+
+    def _signup_and_verify(self, client, db, branch):
+        """가입 + 이메일 인증 (PENDING_APPROVAL 상태로)"""
+        client.post("/admin/signup", json=_signup_payload(branch))
+        code = _get_token(db, "newfc@test.com").code
+        client.post("/admin/verify-email", json={
+            "email": "newfc@test.com", "code": code,
+        })
+
+    def test_reject_pending_approval(self, client, db, branch, auth_super):
+        """승인 대기 계정 거부 → 204, DB에서 삭제됨"""
+        self._signup_and_verify(client, db, branch)
+        fc = db.query(Admin).filter(Admin.email == "newfc@test.com").first()
+
+        res = client.post(f"/admin/admins/{fc.id}/reject", headers=auth_super)
+        assert res.status_code == 204
+        assert db.query(Admin).filter(Admin.id == fc.id).first() is None
+
+    def test_reject_active_account_400(self, client, fc_admin, auth_super):
+        """ACTIVE 계정 거부 시도 → 400 (승인 대기 상태 아님)"""
+        res = client.post(
+            f"/admin/admins/{fc_admin.id}/reject", headers=auth_super
+        )
+        assert res.status_code == 400
+
+    def test_reject_nonexistent_404(self, client, auth_super):
+        """존재하지 않는 계정 거부 → 404"""
+        res = client.post(
+            f"/admin/admins/{uuid4()}/reject", headers=auth_super
+        )
+        assert res.status_code == 404
+
+    def test_reject_requires_auth(self, client):
+        """토큰 없이 거부 시도 → 401"""
+        res = client.post(f"/admin/admins/{uuid4()}/reject")
+        assert res.status_code == 401
