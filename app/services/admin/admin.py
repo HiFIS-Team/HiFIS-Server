@@ -9,9 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.core.security import (
     create_access_token,
+    create_refresh_token,
     hash_password,
     verify_password,
 )
+from app.core.security import decode_token
+
 from app.models.admin.admin import Admin
 from app.models.admin.email_verification_token import EmailVerificationToken
 from app.schemas.admin.admin import (
@@ -175,9 +178,44 @@ def login(db: Session, data: LoginRequest) -> TokenResponse:
         )
 
     token = create_access_token(subject=str(admin.id))
+    refresh = create_refresh_token(subject=str(admin.id))
     logger.info("관리자 로그인: admin_id=%s, email=%s", admin.id, admin.email)
-    return TokenResponse(access_token=token, admin=admin)
+    return TokenResponse(access_token=token, refresh_token=refresh, admin=admin)
 
+def refresh_access_token(db: Session, refresh_token: str) -> TokenResponse:
+    """refresh token으로 access token 재발급 (자동 로그인)"""
+    payload = decode_token(refresh_token)
+    if payload is None or payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 refresh token입니다.",
+        )
+
+    admin_id = payload.get("sub")
+    if admin_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 refresh token입니다.",
+        )
+
+    admin = db.query(Admin).filter(Admin.id == UUID(admin_id)).first()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="존재하지 않는 관리자입니다.",
+        )
+    if admin.status != AdminStatus.ACTIVE.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="로그인할 수 없는 계정 상태입니다.",
+        )
+
+    # access + refresh 둘 다 재발급 (refresh도 갱신 → 쓰는 한 로그인 유지)
+    new_access = create_access_token(subject=str(admin.id))
+    new_refresh = create_refresh_token(subject=str(admin.id))
+    return TokenResponse(
+        access_token=new_access, refresh_token=new_refresh, admin=admin
+    )
 
 def list_admins(db: Session) -> list[Admin]:
     """관리자 전체 목록 조회"""
