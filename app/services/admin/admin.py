@@ -186,6 +186,23 @@ def approve_admin(db: Session, admin_id: UUID) -> Admin:
     logger.info("FC 가입 승인: admin_id=%s, email=%s", admin.id, admin.email)
     return admin
 
+def reject_admin(db: Session, admin_id: UUID) -> None:
+    """FC 가입 거부 - 승인 대기(PENDING_APPROVAL) 계정 삭제 (SUPER_ADMIN 전용)"""
+    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 계정입니다.",
+        )
+    if admin.status != AdminStatus.PENDING_APPROVAL.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="승인 대기 상태가 아닙니다.",
+        )
+
+    db.delete(admin)
+    db.commit()
+    logger.info("FC 가입 거부: admin_id=%s, email=%s", admin_id, admin.email)
 
 def login(db: Session, data: LoginRequest) -> TokenResponse:
     """관리자 로그인 - 이메일/비밀번호 + 계정 상태 검증 후 JWT 발급"""
