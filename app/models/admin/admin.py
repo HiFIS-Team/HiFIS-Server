@@ -24,6 +24,11 @@ class Admin(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False) # SUPER_ADMIN / FC
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="ACTIVE",  # 기존 SUPER_ADMIN은 ACTIVE, 신규 FC는 signup이 PENDING_EMAIL로 지정
+    )
     branch_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("branches.id", ondelete="RESTRICT"),
