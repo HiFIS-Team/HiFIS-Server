@@ -35,6 +35,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# httpx는 외부 API 호출(Solapi·Claude)마다 INFO 로그를 찍어 소음이 큼 → WARNING으로
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,11 +44,6 @@ async def lifespan(app: FastAPI):
     start_scheduler()
     yield
     stop_scheduler()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
 
 app = FastAPI(title="HiFIS Server", lifespan=lifespan)
 
