@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from app.models.admin.admin import Admin
 from app.models.admin.email_verification_token import EmailVerificationToken
+from app.models.admin.password_reset_token import PasswordResetToken
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -364,3 +365,73 @@ class TestRejectAdmin:
         """토큰 없이 거부 시도 → 401"""
         res = client.post(f"/admin/admins/{uuid4()}/reject")
         assert res.status_code == 401
+
+
+class TestPasswordReset:
+
+    def _get_reset_token(self, db, email):
+        return (
+            db.query(PasswordResetToken)
+            .join(Admin, PasswordResetToken.admin_id == Admin.id)
+            .filter(Admin.email == email)
+            .first()
+        )
+
+    def test_request_creates_token(self, client, db, fc_admin):
+        """재설정 요청 → 인증번호 토큰 생성"""
+        res = client.post("/admin/password-reset/request", json={
+            "email": "fc@test.com",
+        })
+        assert res.status_code == 204
+        token = self._get_reset_token(db, "fc@test.com")
+        assert token is not None
+        assert len(token.code) == 6
+
+    def test_reset_full_flow(self, client, db, fc_admin):
+        """요청 → 확정 → 새 비밀번호로 로그인 성공"""
+        client.post("/admin/password-reset/request", json={
+            "email": "fc@test.com",
+        })
+        code = self._get_reset_token(db, "fc@test.com").code
+        res = client.post("/admin/password-reset/confirm", json={
+            "email": "fc@test.com", "code": code,
+            "new_password": "resetpass999",
+        })
+        assert res.status_code == 204
+
+        login = client.post("/admin/login", json={
+            "email": "fc@test.com", "password": "resetpass999",
+        })
+        assert login.status_code == 200
+
+    def test_confirm_wrong_code_400(self, client, db, fc_admin):
+        """틀린 인증번호 → 400"""
+        client.post("/admin/password-reset/request", json={
+            "email": "fc@test.com",
+        })
+        res = client.post("/admin/password-reset/confirm", json={
+            "email": "fc@test.com", "code": "000000",
+            "new_password": "resetpass999",
+        })
+        assert res.status_code == 400
+
+    def test_confirm_expired_code_400(self, client, db, fc_admin):
+        """만료된 인증번호 → 400"""
+        client.post("/admin/password-reset/request", json={
+            "email": "fc@test.com",
+        })
+        token = self._get_reset_token(db, "fc@test.com")
+        token.expires_at = datetime.now(_KST) - timedelta(minutes=1)
+        db.commit()
+        res = client.post("/admin/password-reset/confirm", json={
+            "email": "fc@test.com", "code": token.code,
+            "new_password": "resetpass999",
+        })
+        assert res.status_code == 400
+
+    def test_request_nonexistent_404(self, client):
+        """존재하지 않는 이메일 재설정 요청 → 404"""
+        res = client.post("/admin/password-reset/request", json={
+            "email": "nobody@test.com",
+        })
+        assert res.status_code == 404
