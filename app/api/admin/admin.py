@@ -14,6 +14,7 @@ from app.schemas.admin.admin import (
     LoginRequest,
     PasswordChangeRequest,
     RefreshRequest,
+    ResendVerificationRequest,
     TokenResponse,
 )
 from app.services.admin import admin as admin_service
@@ -37,6 +38,16 @@ def signup(payload: AdminSignup, db: Session = Depends(get_db)):
 def verify_email(payload: EmailVerifyRequest, db: Session = Depends(get_db)):
     """이메일 인증번호 검증 - PENDING_EMAIL → PENDING_APPROVAL"""
     return admin_service.verify_email(db, payload.email, payload.code)
+
+@public_router.post(
+    "/resend-verification", status_code=status.HTTP_204_NO_CONTENT
+)
+def resend_verification(
+    payload: ResendVerificationRequest, db: Session = Depends(get_db)
+):
+    """이메일 인증번호 재발송 (만료/분실 시)"""
+    admin_service.resend_verification(db, payload.email)
+
 
 # SUPER_ADMIN 전용 - 관리자 계정 관리
 admin_router = APIRouter(prefix="/admin/admins", tags=["admin-management"])
