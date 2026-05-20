@@ -221,3 +221,48 @@ class TestRefreshToken:
             "Authorization": f"Bearer {login['refresh_token']}",
         })
         assert res.status_code == 401
+
+
+class TestMe:
+
+    def test_get_me(self, client, fc_admin, auth_fc):
+        """본인 정보 조회"""
+        res = client.get("/admin/me", headers=auth_fc)
+        assert res.status_code == 200
+        body = res.json()
+        assert body["email"] == "fc@test.com"
+        assert body["role"] == "FC"
+
+    def test_get_me_requires_auth(self, client):
+        """토큰 없이 본인 정보 조회 → 401"""
+        res = client.get("/admin/me")
+        assert res.status_code == 401
+
+    def test_update_me_name(self, client, fc_admin, auth_fc):
+        """본인 이름 수정"""
+        res = client.patch(
+            "/admin/me", headers=auth_fc, json={"name": "새이름"}
+        )
+        assert res.status_code == 200
+        assert res.json()["name"] == "새이름"
+
+    def test_change_password_then_login(self, client, fc_admin, auth_fc):
+        """비밀번호 변경 후 새 비번으로 로그인 성공"""
+        res = client.patch("/admin/me/password", headers=auth_fc, json={
+            "current_password": "test1234",
+            "new_password": "newpass5678",
+        })
+        assert res.status_code == 204
+
+        login = client.post("/admin/login", json={
+            "email": "fc@test.com", "password": "newpass5678",
+        })
+        assert login.status_code == 200
+
+    def test_change_password_wrong_current_401(self, client, fc_admin, auth_fc):
+        """현재 비밀번호 틀리면 → 401"""
+        res = client.patch("/admin/me/password", headers=auth_fc, json={
+            "current_password": "wrongpass",
+            "new_password": "newpass5678",
+        })
+        assert res.status_code == 401
