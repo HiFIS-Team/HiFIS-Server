@@ -266,3 +266,62 @@ class TestMe:
             "new_password": "newpass5678",
         })
         assert res.status_code == 401
+
+
+class TestResendVerification:
+
+    def test_resend_then_verify(self, client, db, branch):
+        """재발송 → 토큰 1개로 교체 → 새 코드로 인증 성공"""
+        client.post("/admin/signup", json=_signup_payload(branch))
+        res = client.post("/admin/resend-verification", json={
+            "email": "newfc@test.com",
+        })
+        assert res.status_code == 204
+
+        # 기존 토큰 폐기되고 새 토큰 1개만 남음
+        count = (
+            db.query(EmailVerificationToken)
+            .join(Admin, EmailVerificationToken.admin_id == Admin.id)
+            .filter(Admin.email == "newfc@test.com")
+            .count()
+        )
+        assert count == 1
+
+        code = _get_token(db, "newfc@test.com").code
+        verify = client.post("/admin/verify-email", json={
+            "email": "newfc@test.com", "code": code,
+        })
+        assert verify.status_code == 200
+
+    def test_resend_after_expiry_unblocks(self, client, db, branch):
+        """만료 후 재발송 → 갇힘 해소 (새 코드로 인증 가능)"""
+        client.post("/admin/signup", json=_signup_payload(branch))
+        token = _get_token(db, "newfc@test.com")
+        token.expires_at = datetime.now(_KST) - timedelta(minutes=1)  # 만료시킴
+        db.commit()
+
+        client.post("/admin/resend-verification", json={"email": "newfc@test.com"})
+        new_code = _get_token(db, "newfc@test.com").code
+        res = client.post("/admin/verify-email", json={
+            "email": "newfc@test.com", "code": new_code,
+        })
+        assert res.status_code == 200
+
+    def test_resend_already_verified_400(self, client, db, branch):
+        """이미 인증 완료된 계정 재발송 → 400"""
+        client.post("/admin/signup", json=_signup_payload(branch))
+        code = _get_token(db, "newfc@test.com").code
+        client.post("/admin/verify-email", json={
+            "email": "newfc@test.com", "code": code,
+        })
+        res = client.post("/admin/resend-verification", json={
+            "email": "newfc@test.com",
+        })
+        assert res.status_code == 400
+
+    def test_resend_nonexistent_404(self, client):
+        """존재하지 않는 이메일 재발송 → 404"""
+        res = client.post("/admin/resend-verification", json={
+            "email": "nobody@test.com",
+        })
+        assert res.status_code == 404
