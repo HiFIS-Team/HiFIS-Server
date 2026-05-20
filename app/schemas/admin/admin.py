@@ -59,5 +59,10 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     """로그인 응답 - JWT 발급"""
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     admin: AdminResponse
+
+class RefreshRequest(BaseModel):
+    """access token 재발급 요청"""
+    refresh_token: str
