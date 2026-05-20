@@ -66,3 +66,12 @@ class TokenResponse(BaseModel):
 class RefreshRequest(BaseModel):
     """access token 재발급 요청"""
     refresh_token: str
+
+class AdminSelfUpdate(BaseModel):
+    """본인 정보 수정 (이름만 - 지점/권한은 SUPER_ADMIN 영역)"""
+    name: str = Field(..., min_length=1, max_length=50)
+
+class PasswordChangeRequest(BaseModel):
+    """비밀번호 변경 (로그인 상태)"""
+    current_password: str
+    new_password: str = Field(..., min_length=8, max_length=100)
