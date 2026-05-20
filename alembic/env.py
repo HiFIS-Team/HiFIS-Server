@@ -18,6 +18,7 @@ from app.models.registrations import member as _member  # noqa: F401
 from app.models.registrations import pt_application as _pt_application  # noqa: F401
 from app.models.admin import admin as _admin  # noqa: F401
 from app.models.admin import email_verification_token as _email_verification_token  # noqa: F401
+from app.models.admin import password_reset_token as _password_reset_token  # noqa: F401
 from app.models.messaging import message as _message  # noqa: F401
 from app.models import hold as _hold  # noqa: F401
 from app.models.passes import locker as _locker_pass  # noqa: F401
