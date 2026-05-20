@@ -79,3 +79,14 @@ class PasswordChangeRequest(BaseModel):
 class ResendVerificationRequest(BaseModel):
     """인증번호 재발송 요청 (Public)"""
     email: EmailStr
+
+class PasswordResetRequest(BaseModel):
+    """비밀번호 재설정 요청 - 인증번호 메일 발송 (Public)"""
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    """비밀번호 재설정 확정 - 인증번호 + 새 비번 (Public)"""
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8, max_length=100)
+
