@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480
+    JWT_REFRESH_EXPIRE_DAYS: int = 30
 
     SOLAPI_API_KEY: str
     SOLAPI_API_SECRET: str
