@@ -75,3 +75,7 @@ class PasswordChangeRequest(BaseModel):
     """비밀번호 변경 (로그인 상태)"""
     current_password: str
     new_password: str = Field(..., min_length=8, max_length=100)
+
+class ResendVerificationRequest(BaseModel):
+    """인증번호 재발송 요청 (Public)"""
+    email: EmailStr
