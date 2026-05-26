@@ -1,13 +1,14 @@
 from uuid import UUID
 from datetime import date
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
 from app.core.rate_limit import limiter
 from app.models.admin.admin import Admin
 from app.db.deps import get_db
+from app.schemas.common import Page
 from app.schemas.registrations.member import MemberCreate, MemberResponse, MemberUpdate
 from app.schemas.enums import MemberStatus
 from app.services.registrations import member as member_service
@@ -24,7 +25,7 @@ def create_member(request: Request, payload: MemberCreate, db: Session = Depends
 # Admin - 인증 의존성은 인증 도입 후 부착
 admin_router = APIRouter(prefix="/admin/members", tags=["admin-members"])
 
-@admin_router.get("", response_model=list[MemberResponse])
+@admin_router.get("", response_model=Page[MemberResponse])
 def admin_list_members(
     branch_id: UUID | None = None,
     name: str | None = None,
@@ -34,16 +35,22 @@ def admin_list_members(
     start_date_to: date | None = None,
     end_date_from: date | None = None,
     end_date_to: date | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
 ):
-    """회원 목록 조회 (Admin, FC는 자기 지점만) - 이름·전화·상태·기간 필터"""
-    return member_service.list_members(
+    """회원 목록 조회 + 페이지네이션 (Admin, FC는 자기 지점만) - 필터·페이지·페이지사이즈
+
+    전체 카운트·차트·상태분포 등 집계는 GET /admin/dashboard/summary 사용.
+    """
+    items, total = member_service.list_members(
         db, branch_id, name, phone, status,
         start_date_from, start_date_to,
         end_date_from, end_date_to,
-        current_admin,
+        current_admin, page, page_size,
     )
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @admin_router.get("/{member_id}", response_model=MemberResponse)

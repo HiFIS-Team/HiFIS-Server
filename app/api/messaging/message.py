@@ -1,10 +1,11 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.deps import get_db
+from app.schemas.common import Page
 from app.schemas.messaging.message import MessageResponse, MessageSendRequest
 from app.services.messaging import message as message_service
 from app.api.deps import get_current_admin
@@ -22,7 +23,7 @@ def send_message(payload: MessageSendRequest, db: Session = Depends(get_db)):
 # Admin - 발송 이력 조회
 admin_router = APIRouter(prefix="/admin/messages", tags=["admin-messages"])
 
-@admin_router.get("", response_model=list[MessageResponse])
+@admin_router.get("", response_model=Page[MessageResponse])
 def admin_list_messages(
     branch_id: UUID | None = None,
     source_type: MessageSourceType | None = None,
@@ -32,14 +33,18 @@ def admin_list_messages(
     phone: str | None = None,
     sent_from: date | None = None,
     sent_to: date | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
 ):
-    """메시지 발송 이력 (Admin, FC는 자기 지점만) - 최신순"""
-    return message_service.list_messages(
+    """메시지 이력 + 페이지네이션 (Admin, FC는 자기 지점만, 최신순)"""
+    items, total = message_service.list_messages(
         db, branch_id, source_type, source_id, trigger_type,
         status, phone, sent_from, sent_to, current_admin,
+        page, page_size,
     )
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 @admin_router.get("/{message_id}", response_model=MessageResponse)
 def admin_get_message(

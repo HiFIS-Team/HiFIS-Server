@@ -85,14 +85,14 @@ class TestListReservationPermissions:
         """SUPER_ADMIN은 전 지점 예약을 다 봄"""
         res = client.get("/admin/reservations", headers=auth_super)
         assert res.status_code == 200
-        names = {r["name"] for r in res.json()}
+        names = {r["name"] for r in res.json()["items"]}
         assert {"화순예약", "첨단예약"} <= names
 
     def test_fc_sees_only_own_branch(self, client, auth_fc, two_branch_reservations):
         """FC는 branch_id 안 줘도 자기 지점만 (권한 누수 회귀 방지)"""
         res = client.get("/admin/reservations", headers=auth_fc)
         assert res.status_code == 200
-        names = {r["name"] for r in res.json()}
+        names = {r["name"] for r in res.json()["items"]}
         assert "화순예약" in names
         assert "첨단예약" not in names
 

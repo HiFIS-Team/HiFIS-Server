@@ -145,7 +145,7 @@ class TestPTApplicationAdmin:
         """FC는 자기 지점 PT 신청만 조회"""
         res = client.get("/admin/pt-applications", headers=auth_fc)
         assert res.status_code == 200
-        names = {a["name"] for a in res.json()}
+        names = {a["name"] for a in res.json()["items"]}
         assert "기존신청" in names
         assert "타지점신청" not in names
 

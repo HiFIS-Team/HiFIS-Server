@@ -53,14 +53,28 @@ def create_reservation(db: Session, data: ReservationCreate) -> Reservation:
 
     return reservation
 
-def list_reservation(db: Session, branch_id: UUID | None, current_admin: Admin) -> list[Reservation]:
-    """예약 목록 조회 FC는 자기 지점 강제, SUPER_ADMIN은 옵션 필터"""
+def list_reservation(
+    db: Session,
+    branch_id: UUID | None,
+    current_admin: Admin,
+    page: int,
+    page_size: int,
+) -> tuple[list[Reservation], int]:
+    """예약 목록 조회 + 페이지네이션 (FC는 자기 지점 강제)"""
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
 
     query = db.query(Reservation)
     if effective_branch_id is not None:
         query = query.filter(Reservation.branch_id == effective_branch_id)
-    return query.order_by(Reservation.created_at.desc()).all()
+
+    total = query.count()
+    items = (
+        query.order_by(Reservation.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total
 
 def delete_reservation(db: Session, reservation_id: UUID, current_admin: Admin) -> None:
     """예약 삭제 (Admin, 하드 삭제) - FC는 자기 지점만"""
