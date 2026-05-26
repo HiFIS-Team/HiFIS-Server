@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.schemas.enums import (
     Gender,
     MemberStatus,
+    Motivation,
     PaymentMethod,
     Referral,
 )
@@ -30,6 +31,8 @@ class PTApplicationCreate(BaseModel):
     """PT 신청 (Public)"""
     branch_id: UUID
     pt_pass_id: UUID
+    locker_pass_id: UUID | None = None
+    clothes_pass_id: UUID | None = None
     name: str = Field(..., min_length=1, max_length=50)
     gender: Gender
     birth_date: date
@@ -40,6 +43,7 @@ class PTApplicationCreate(BaseModel):
     final_price: int = Field(..., ge=0)
     start_date: date
     end_date: date
+    motivation: Motivation | None = None
     notes: str | None = Field(default=None, max_length=500)
     agreed_notice: bool = Field(..., description="유의사항 확인 (true 필수)")
 
@@ -71,6 +75,8 @@ class PTApplicationCreate(BaseModel):
 class PTApplicationUpdate(BaseModel):
     """PT 신청 정보 수정 (Admin, 부분 수정)"""
     pt_pass_id: UUID | None = None
+    locker_pass_id: UUID | None = None
+    clothes_pass_id: UUID | None = None
     name: str | None = Field(default=None, min_length=1, max_length=50)
     gender: Gender | None = None
     birth_date: date | None = None
@@ -81,6 +87,7 @@ class PTApplicationUpdate(BaseModel):
     final_price: int | None = Field(default=None, ge=0)
     start_date: date | None = None
     end_date: date | None = None
+    motivation: Motivation | None = None
     notes: str | None = Field(default=None, max_length=500)
 
     @field_validator("phone")
@@ -118,6 +125,8 @@ class PTApplicationResponse(BaseModel):
     id: UUID
     branch_id: UUID
     pt_pass_id: UUID
+    locker_pass_id: UUID | None
+    clothes_pass_id: UUID | None
     name: str
     gender: Gender
     birth_date: date
@@ -128,6 +137,7 @@ class PTApplicationResponse(BaseModel):
     final_price: int
     start_date: date
     end_date: date
+    motivation: Motivation | None
     notes: str | None
     status: MemberStatus
     created_at: datetime

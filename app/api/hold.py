@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
 from app.models.admin.admin import Admin
-from app.schemas.hold import HoldCreate, HoldResponse
+from app.schemas.hold import HoldCancelBySourceRequest, HoldCreate, HoldResponse
 from app.services import hold as hold_service
 
 # Admin - 홀딩은 관리자(직원)만 등록
@@ -21,11 +21,25 @@ def admin_create_hold(
     """홀딩 신청 (Admin) - FC는 자기 지점 회원/PT만"""
     return hold_service.create_hold(db, payload, current_admin)
 
+@admin_router.post("/cancel", status_code=status.HTTP_204_NO_CONTENT)
+def admin_cancel_hold_by_source(
+    payload: HoldCancelBySourceRequest,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """source 기반 홀딩 취소 (Admin) - 회원/PT 단위로 활성 홀딩 모두 취소
+
+    프론트가 hold_id를 모르고도 "이 회원 홀딩 풀어달라" 한 번에 가능. 활성 홀딩 없으면 404.
+    """
+    hold_service.cancel_hold_by_source(
+        db, payload.source_type, payload.source_id, current_admin,
+    )
+
 @admin_router.delete("/{hold_id}", status_code=status.HTTP_204_NO_CONTENT)
 def admin_cancel_hold(
     hold_id: UUID,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
 ):
-    """홀딩 취소 (Admin) - 만기일 조정 + 취소 알림톡 + 홀딩 레코드 삭제"""
+    """홀딩 1건 취소 (hold_id 기반) - 만기일 조정 + 취소 알림톡 + 홀딩 레코드 삭제"""
     hold_service.cancel_hold(db, hold_id, current_admin)

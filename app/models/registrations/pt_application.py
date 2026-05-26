@@ -37,6 +37,16 @@ class PTApplication(Base):
         ForeignKey("pt_passes.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    locker_pass_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("locker_passes.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    clothes_pass_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("clothes_passes.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
 
     # 개인 정보
     name: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -54,7 +64,8 @@ class PTApplication(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    # PT 특화 필드
+    # 부가 옵션
+    motivation: Mapped[str | None] = mapped_column(String(20), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     agreed_notice: Mapped[bool] = mapped_column(Boolean, nullable=False)
 

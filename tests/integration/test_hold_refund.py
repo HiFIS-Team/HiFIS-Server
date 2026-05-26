@@ -136,3 +136,180 @@ class TestCancelHold:
         # 만기일 변화 없음 (5일 다 쉼 → 환원 0일)
         db.refresh(registered_member)
         assert registered_member.end_date == extended_end
+
+
+class TestHoldStatusTransitions:
+    """HELD 자동 전환 - hold 생성·취소·스케줄러 정리 시 status 변화"""
+
+    def test_create_hold_sets_status_to_held(
+        self, client, db, auth_super, registered_member,
+    ):
+        """홀딩 생성 → 회원 status가 HELD로 자동 전환"""
+        today = date.today()
+        res = client.post(
+            "/admin/holds",
+            headers=auth_super,
+            json={
+                "source_type": "MEMBER",
+                "source_id": str(registered_member.id),
+                "reason": "출장",
+                "start_date": str(today),
+                "end_date": str(today + timedelta(days=5)),
+            },
+        )
+        assert res.status_code in (200, 201)
+        db.refresh(registered_member)
+        assert registered_member.status == "HELD"
+
+    def test_cancel_hold_recalcs_to_registered(
+        self, client, db, auth_super, registered_member,
+    ):
+        """홀딩 즉시 취소 → end_date 미래라 REGISTERED 복귀"""
+        today = date.today()
+        create_res = client.post(
+            "/admin/holds",
+            headers=auth_super,
+            json={
+                "source_type": "MEMBER",
+                "source_id": str(registered_member.id),
+                "reason": "출장",
+                "start_date": str(today),
+                "end_date": str(today + timedelta(days=5)),
+            },
+        )
+        hold_id = create_res.json()["id"]
+        db.refresh(registered_member)
+        assert registered_member.status == "HELD"
+
+        cancel_res = client.delete(
+            f"/admin/holds/{hold_id}", headers=auth_super,
+        )
+        assert cancel_res.status_code in (200, 204)
+        db.refresh(registered_member)
+        # 즉시 취소 → end_date 원복(60일 후) → REGISTERED
+        assert registered_member.status == "REGISTERED"
+
+    def test_scheduler_cleanup_recalcs_status(self, db, registered_member):
+        """스케줄러가 만료 홀딩 정리 시 HELD → REGISTERED 복귀"""
+        from app.services.messaging.scheduler import _process_expired_holds
+
+        today = date.today()
+        # 어제 종료된 hold를 직접 생성 + 회원을 HELD 상태로 (정리 미완 시뮬레이션)
+        hold = Hold(
+            source_type="MEMBER",
+            source_id=registered_member.id,
+            reason="과거 홀딩",
+            start_date=today - timedelta(days=5),
+            end_date=today - timedelta(days=1),
+        )
+        db.add(hold)
+        registered_member.status = "HELD"
+        db.commit()
+
+        _process_expired_holds(db, today)
+
+        db.refresh(registered_member)
+        assert db.query(Hold).filter(Hold.id == hold.id).first() is None
+        # end_date(60일 후) 미래 → REGISTERED
+        assert registered_member.status == "REGISTERED"
+
+    def test_multiple_holds_status_stays_held_after_one_cancel(
+        self, client, db, auth_super, registered_member,
+    ):
+        """2개 hold 중 1개만 취소 → 남은 hold 때문에 status는 HELD 유지"""
+        today = date.today()
+        # 2개의 hold 생성
+        r1 = client.post(
+            "/admin/holds",
+            headers=auth_super,
+            json={
+                "source_type": "MEMBER",
+                "source_id": str(registered_member.id),
+                "reason": "출장 1",
+                "start_date": str(today),
+                "end_date": str(today + timedelta(days=3)),
+            },
+        )
+        hold1_id = r1.json()["id"]
+        client.post(
+            "/admin/holds",
+            headers=auth_super,
+            json={
+                "source_type": "MEMBER",
+                "source_id": str(registered_member.id),
+                "reason": "출장 2",
+                "start_date": str(today + timedelta(days=4)),
+                "end_date": str(today + timedelta(days=8)),
+            },
+        )
+
+        # 첫 번째만 취소
+        client.delete(f"/admin/holds/{hold1_id}", headers=auth_super)
+        db.refresh(registered_member)
+        # 두 번째 hold가 남아 있으므로 여전히 HELD
+        assert registered_member.status == "HELD"
+
+
+class TestCancelHoldBySource:
+    """POST /admin/holds/cancel - source 기반 일괄 취소"""
+
+    def test_cancel_by_source_finds_and_cancels(
+        self, client, db, auth_super, registered_member,
+    ):
+        """source_type/source_id로 활성 hold 찾아서 취소 + status 복귀"""
+        today = date.today()
+        client.post(
+            "/admin/holds",
+            headers=auth_super,
+            json={
+                "source_type": "MEMBER",
+                "source_id": str(registered_member.id),
+                "reason": "출장",
+                "start_date": str(today),
+                "end_date": str(today + timedelta(days=5)),
+            },
+        )
+
+        res = client.post(
+            "/admin/holds/cancel",
+            headers=auth_super,
+            json={
+                "source_type": "MEMBER",
+                "source_id": str(registered_member.id),
+            },
+        )
+        assert res.status_code == 204, res.text
+        db.refresh(registered_member)
+        assert registered_member.status == "REGISTERED"
+        # 모든 hold 삭제됨
+        assert db.query(Hold).filter(
+            Hold.source_id == registered_member.id
+        ).count() == 0
+
+    def test_cancel_by_source_no_active_hold_404(
+        self, client, auth_super, registered_member,
+    ):
+        """활성 hold 없으면 404"""
+        res = client.post(
+            "/admin/holds/cancel",
+            headers=auth_super,
+            json={
+                "source_type": "MEMBER",
+                "source_id": str(registered_member.id),
+            },
+        )
+        assert res.status_code == 404
+
+    def test_cancel_by_source_reservation_rejected(self, client, auth_super):
+        """RESERVATION 타입은 스키마에서 차단"""
+        from uuid import uuid4
+
+        res = client.post(
+            "/admin/holds/cancel",
+            headers=auth_super,
+            json={
+                "source_type": "RESERVATION",
+                "source_id": str(uuid4()),
+            },
+        )
+        assert res.status_code == 422

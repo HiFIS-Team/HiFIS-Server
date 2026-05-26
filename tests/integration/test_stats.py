@@ -129,3 +129,60 @@ class TestStatsPermissions:
     def test_no_auth_401(self, client):
         res = client.get("/admin/stats/referral")
         assert res.status_code == 401
+
+
+class TestMotivationIncludesPT:
+    """방문목적 통계는 Member + PTApplication 합산 (Phase A 변경)"""
+
+    def test_pt_motivation_counted_with_member(
+        self, client, db, auth_super, branch,
+    ):
+        """Member 1명(WEIGHT_LOSS) + PT 1건(WEIGHT_LOSS) → count 2"""
+        mp = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        pp = PTPass(
+            branch_id=branch.id, name="PT", cash_price=1, card_price=1,
+        )
+        db.add_all([mp, pp]); db.commit(); db.refresh(mp); db.refresh(pp)
+        _make_member(db, branch, mp.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        today = date.today()
+        pt = PTApplication(
+            branch_id=branch.id, pt_pass_id=pp.id,
+            name="PT", gender="M", birth_date="1990-01-01",
+            phone="01000000002", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS",
+            agreed_notice=True,
+        )
+        db.add(pt); db.commit()
+
+        res = client.get("/admin/stats/motivation", headers=auth_super)
+        assert res.status_code == 200
+        assert _count_for(res.json()["items"], "WEIGHT_LOSS") == 2
+
+    def test_pt_with_null_motivation_skipped(
+        self, client, db, auth_super, branch,
+    ):
+        """PT의 motivation이 NULL이면 집계 제외 (Member도 없으면 total=0)"""
+        pp = PTPass(
+            branch_id=branch.id, name="PT", cash_price=1, card_price=1,
+        )
+        db.add(pp); db.commit(); db.refresh(pp)
+        today = date.today()
+        pt = PTApplication(
+            branch_id=branch.id, pt_pass_id=pp.id,
+            name="PT", gender="M", birth_date="1990-01-01",
+            phone="01000000003", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation=None,
+            agreed_notice=True,
+        )
+        db.add(pt); db.commit()
+
+        res = client.get("/admin/stats/motivation", headers=auth_super)
+        assert res.status_code == 200
+        assert res.json()["total"] == 0

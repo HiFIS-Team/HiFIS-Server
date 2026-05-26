@@ -38,9 +38,10 @@ class Motivation(str, Enum):
     POSTURE_CORRECTION = "POSTURE_CORRECTION"
 
 class MemberStatus(str, Enum):
-    """회원 상태"""
-    REGISTERED = "REGISTERED"
-    EXPIRED = "EXPIRED"
+    """회원 / PT 신청 상태 (양쪽 status 컬럼 공용)"""
+    REGISTERED = "REGISTERED"  # 활성
+    HELD = "HELD"              # 홀딩 중 (활성 hold 존재)
+    EXPIRED = "EXPIRED"        # 만기
 
 class TriggerType(str, Enum):
     """알림톡 발송 트리거 (11종)"""
@@ -70,12 +71,6 @@ class MessageStatus(str, Enum):
     """알림톡 발송 결과"""
     SUCCESS = "SUCCESS"
     FAIL = "FAIL"
-
-class MessageSourceType(str, Enum):
-    """알림톡 발생 출처"""
-    MEMBER = "MEMBER"
-    PT_APPLICATION = "PT_APPLICATION"
-    RESERVATION = "RESERVATION"    
 
 class MessageSourceType(str, Enum):
     """알림톡 발생 출처"""
@@ -117,6 +112,29 @@ MOTIVATION_LABELS: dict[Motivation, str] = {
     Motivation.RECOMMENDATION: "주변 권유",
     Motivation.INJURY_PREVENTION: "부상 / 통증 예방",
     Motivation.POSTURE_CORRECTION: "체형 교정",
+}
+
+TRIGGER_LABELS: dict[TriggerType, str] = {
+    TriggerType.RESERVATION_CONFIRM: "예약 확인",
+    TriggerType.REGISTERED: "신청 등록",
+    TriggerType.HOLD: "홀딩 시작",
+    TriggerType.HOLD_CANCEL: "홀딩 취소",
+    TriggerType.RESERVATION_CHECK_1: "예약 +3일 미등록 안내",
+    TriggerType.RESERVATION_CHECK_2: "예약 +5일 미등록 안내",
+    TriggerType.D_PLUS_7: "가입 +7일",
+    TriggerType.D_PLUS_14: "가입 +14일",
+    TriggerType.D_PLUS_30: "가입 +30일",
+    TriggerType.EXPIRY_SOON_5: "만기 -5일",
+    TriggerType.EXPIRY_SOON_2: "만기 -2일",
+    TriggerType.EXPIRED_TODAY: "만기 당일",
+    TriggerType.EXPIRED_FOLLOWUP: "만기 +30일 (재등록 권유)",
+}
+
+SOURCE_TYPE_LABELS: dict[MessageSourceType, str] = {
+    MessageSourceType.MEMBER: "회원",
+    MessageSourceType.PT_APPLICATION: "PT 신청",
+    MessageSourceType.RESERVATION: "예약",
+    MessageSourceType.HOLD: "홀딩",
 }
 
 # === 옵션 응답 헬퍼 ===

@@ -73,19 +73,35 @@ def get_motivation_stats(
     branch_id: UUID | None,
     current_admin: Admin,
 ) -> StatsResponse:
-    """이번 달 방문목적 통계 (Member만 - PT 신청에는 motivation 없음)"""
+    """이번 달 방문목적 통계 (Member + PTApplication 합산, PT는 nullable이라 NULL 제외)"""
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
     month_start, next_month_start = _current_month_range()
 
-    q = db.query(Member.motivation, func.count().label("c")).filter(
+    # Member 집계 (motivation은 필수)
+    member_q = db.query(Member.motivation, func.count().label("c")).filter(
         Member.created_at >= month_start,
         Member.created_at < next_month_start,
     )
     if effective_branch_id is not None:
-        q = q.filter(Member.branch_id == effective_branch_id)
-    rows = q.group_by(Member.motivation).all()
+        member_q = member_q.filter(Member.branch_id == effective_branch_id)
+    member_rows = member_q.group_by(Member.motivation).all()
 
-    counts = dict(rows)
+    # PTApplication 집계 (motivation nullable → NULL 제외)
+    pt_q = db.query(PTApplication.motivation, func.count().label("c")).filter(
+        PTApplication.created_at >= month_start,
+        PTApplication.created_at < next_month_start,
+        PTApplication.motivation.is_not(None),
+    )
+    if effective_branch_id is not None:
+        pt_q = pt_q.filter(PTApplication.branch_id == effective_branch_id)
+    pt_rows = pt_q.group_by(PTApplication.motivation).all()
+
+    # 합산
+    counts: dict[str, int] = {}
+    for code, c in member_rows:
+        counts[code] = counts.get(code, 0) + c
+    for code, c in pt_rows:
+        counts[code] = counts.get(code, 0) + c
 
     items = [
         StatItem(
