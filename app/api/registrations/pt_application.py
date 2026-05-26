@@ -1,7 +1,7 @@
 from uuid import UUID
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
@@ -25,10 +25,11 @@ public_router = APIRouter(prefix="/pt-applications", tags=["pt-applications"])
 def create_pt_application(
     request: Request,
     payload: PTApplicationCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """PT 신청서 생성 (Public)"""
-    return pt_application_service.create_pt_application(db, payload)
+    """PT 신청서 생성 (Public). 어드민 알림은 BackgroundTasks로 응답 후 발송."""
+    return pt_application_service.create_pt_application(db, payload, background_tasks)
 
 # Admin - 인증 의존성은 인증 도입 후 부착
 admin_router = APIRouter(prefix="/admin/pt-applications", tags=["admin-pt-applications"])

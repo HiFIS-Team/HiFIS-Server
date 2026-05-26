@@ -1,12 +1,13 @@
 import logging
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.schemas.enums import MessageSourceType, TriggerType
+from app.schemas.enums import MessageSourceType, NotificationSourceType, TriggerType
 from app.schemas.messaging.message import MessageSendRequest
-from app.services.branch import ensure_branch_exists
+from app.services.admin import notification as notification_service
+from app.services.branch import ensure_branch_exists, get_branch
 from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
@@ -16,9 +17,13 @@ from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
 
-def create_reservation(db: Session, data: ReservationCreate) -> Reservation:
-    """예약 신청 생성 - 지점 존재 검증 후 저장 (Public)"""
-    ensure_branch_exists(db, data.branch_id)
+def create_reservation(
+    db: Session,
+    data: ReservationCreate,
+    background_tasks: BackgroundTasks | None = None,
+) -> Reservation:
+    """예약 신청 생성 - 지점 검증 → 저장 → 회원 알림톡 → 어드민 알림 fan-out (Public)"""
+    branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
 
     reservation = Reservation(
         branch_id=data.branch_id,
@@ -36,6 +41,7 @@ def create_reservation(db: Session, data: ReservationCreate) -> Reservation:
         data.branch_id, data.name, mask_phone(data.phone), data.visit_date,
     )
 
+    # 회원에게 LMS (예약 확정)
     try:
         message_service.send_message(db, MessageSendRequest(
             branch_id=data.branch_id,
@@ -48,6 +54,23 @@ def create_reservation(db: Session, data: ReservationCreate) -> Reservation:
     except Exception as e:
         logger.error(
             "예약 확정 알림 발송 실패: reservation_id=%s, error=%s",
+            reservation.id, str(e),
+        )
+
+    # 어드민(지점 FC + SUPER_ADMIN)에게 알림 (DB + Web Push)
+    try:
+        notification_service.notify_branch_event(
+            db,
+            branch_id=data.branch_id,
+            source_type=NotificationSourceType.RESERVATION,
+            source_id=reservation.id,
+            title=f"새 예약 - {branch.name}",
+            body=f"{data.name}님이 {data.visit_date} 방문 예약했습니다.",
+            background_tasks=background_tasks,
+        )
+    except Exception as e:
+        logger.error(
+            "예약 어드민 알림 fan-out 실패: reservation_id=%s, error=%s",
             reservation.id, str(e),
         )
 

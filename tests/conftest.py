@@ -122,6 +122,11 @@ def mock_external_apis(monkeypatch):
         lambda to_email, name, code: True,
         raising=False,
     )
+    # Web Push 발송 - VAPID 미설정 환경에서도 안전하게 no-op (실제 push HTTP 호출 차단)
+    monkeypatch.setattr(
+        "app.services.admin.push_sender.send_to_admin",
+        lambda admin_id, payload: None,
+    )
 
 
 # === 도메인 fixture (지점 / 관리자) ===

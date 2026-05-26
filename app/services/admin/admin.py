@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.security import (
@@ -26,6 +26,8 @@ from app.schemas.admin.admin import (
     PasswordChangeRequest,
     TokenResponse,
 )
+from app.schemas.enums import NotificationSourceType
+from app.services.admin import notification as notification_service
 from app.services.branch import ensure_branch_exists
 from app.models.admin.password_reset_token import PasswordResetToken
 from app.services.messaging.email import (
@@ -83,8 +85,13 @@ def signup(db: Session, data: AdminSignup) -> Admin:
     return admin
 
 
-def verify_email(db: Session, email: str, code: str) -> Admin:
-    """이메일 인증번호 검증 - PENDING_EMAIL → PENDING_APPROVAL"""
+def verify_email(
+    db: Session,
+    email: str,
+    code: str,
+    background_tasks: BackgroundTasks | None = None,
+) -> Admin:
+    """이메일 인증번호 검증 - PENDING_EMAIL → PENDING_APPROVAL + SUPER_ADMIN 알림"""
     admin = db.query(Admin).filter(Admin.email == email).first()
     if admin is None:
         raise HTTPException(
@@ -122,6 +129,23 @@ def verify_email(db: Session, email: str, code: str) -> Admin:
     db.refresh(admin)
 
     logger.info("이메일 인증 완료: admin_id=%s", admin.id)
+
+    # SUPER_ADMIN에게 가입 승인 대기 알림 (DB + Web Push)
+    try:
+        notification_service.notify_super_admins(
+            db,
+            source_type=NotificationSourceType.FC_SIGNUP,
+            source_id=admin.id,
+            title="FC 가입 승인 대기",
+            body=f"{admin.name}({admin.email})님이 이메일 인증을 완료했습니다.",
+            background_tasks=background_tasks,
+        )
+    except Exception as e:
+        logger.error(
+            "FC 가입 알림 fan-out 실패: admin_id=%s, error=%s",
+            admin.id, str(e),
+        )
+
     return admin
 
 

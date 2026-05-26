@@ -79,6 +79,13 @@ class MessageSourceType(str, Enum):
     RESERVATION = "RESERVATION"
     HOLD = "HOLD"
 
+class NotificationSourceType(str, Enum):
+    """어드민 알림 발생 출처 (DB 알림 + Web Push)"""
+    RESERVATION = "RESERVATION"      # 새 예약
+    MEMBER = "MEMBER"                # 새 회원가입
+    PT_APPLICATION = "PT_APPLICATION"  # 새 PT 신청
+    FC_SIGNUP = "FC_SIGNUP"          # FC 가입 인증 완료 → 승인 대기
+
 # === 한국어 라벨 매핑 (프론트 표시용) ===
 
 GENDER_LABELS: dict[Gender, str] = {

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
@@ -16,9 +16,14 @@ public_router = APIRouter(prefix="/reservations", tags=["reservations"])
 
 @public_router.post("", response_model=ReservationResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
-def create_reservation(request: Request, payload: ReservationCreate, db: Session = Depends(get_db)):
-    """예약 신청 생성 (Public)"""
-    return reservation_service.create_reservation(db, payload)
+def create_reservation(
+    request: Request,
+    payload: ReservationCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """예약 신청 생성 (Public). 어드민 알림은 BackgroundTasks로 응답 후 발송."""
+    return reservation_service.create_reservation(db, payload, background_tasks)
 
 # Admin - 인증 의존성은 인증 도입 후 부착
 admin_router = APIRouter(prefix="/admin/reservations", tags=["admin-reservations"])

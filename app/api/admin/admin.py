@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, require_super_admin
@@ -42,9 +42,16 @@ def signup(request: Request, payload: AdminSignup, db: Session = Depends(get_db)
 
 @public_router.post("/verify-email", response_model=AdminResponse)
 @limiter.limit("10/minute")
-def verify_email(request: Request, payload: EmailVerifyRequest, db: Session = Depends(get_db)):
-    """이메일 인증번호 검증 - PENDING_EMAIL → PENDING_APPROVAL"""
-    return admin_service.verify_email(db, payload.email, payload.code)
+def verify_email(
+    request: Request,
+    payload: EmailVerifyRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """이메일 인증번호 검증 - PENDING_EMAIL → PENDING_APPROVAL + SUPER_ADMIN 알림 발송"""
+    return admin_service.verify_email(
+        db, payload.email, payload.code, background_tasks,
+    )
 
 @public_router.post(
     "/resend-verification", status_code=status.HTTP_204_NO_CONTENT
