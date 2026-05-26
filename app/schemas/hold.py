@@ -26,6 +26,19 @@ class HoldCreate(BaseModel):
             raise ValueError("종료일은 시작일보다 빠를 수 없습니다.")
         return self
 
+class HoldCancelBySourceRequest(BaseModel):
+    """source 기반 홀딩 취소 요청 - hold_id 없이 회원/PT 단위로 활성 홀딩 모두 취소"""
+    source_type: MessageSourceType
+    source_id: UUID
+
+    @field_validator("source_type")
+    @classmethod
+    def _no_reservation(cls, v: MessageSourceType) -> MessageSourceType:
+        if v in (MessageSourceType.RESERVATION, MessageSourceType.HOLD):
+            raise ValueError("취소는 회원 또는 PT 신청 대상만 가능합니다.")
+        return v
+
+
 class HoldResponse(BaseModel):
     """홀딩 응답"""
     model_config = ConfigDict(from_attributes=True)

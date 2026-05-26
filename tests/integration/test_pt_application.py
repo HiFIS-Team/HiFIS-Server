@@ -190,3 +190,104 @@ class TestPTApplicationAdmin:
     def test_no_auth_401(self, client):
         res = client.get("/admin/pt-applications")
         assert res.status_code == 401
+
+
+# === Phase A 추가 필드: motivation / locker_pass_id / clothes_pass_id ===
+
+@pytest.fixture
+def locker_pass_pt(db, branch):
+    """화순점 락커 상품 (PT용 0원)"""
+    from app.models.passes.locker import LockerPass
+    p = LockerPass(
+        branch_id=branch.id, name="PT 락커 1개월",
+        cash_price=0, card_price=0,
+    )
+    db.add(p); db.commit(); db.refresh(p)
+    return p
+
+
+@pytest.fixture
+def clothes_pass_pt(db, branch):
+    """화순점 운동복 상품 (PT용 0원)"""
+    from app.models.passes.clothes import ClothesPass
+    p = ClothesPass(
+        branch_id=branch.id, name="PT 운동복 1개월",
+        cash_price=0, card_price=0,
+    )
+    db.add(p); db.commit(); db.refresh(p)
+    return p
+
+
+@pytest.fixture
+def locker_pass_other_branch(db, branch_other):
+    """첨단점 락커 상품 (지점 검증용)"""
+    from app.models.passes.locker import LockerPass
+    p = LockerPass(
+        branch_id=branch_other.id, name="락커",
+        cash_price=0, card_price=0,
+    )
+    db.add(p); db.commit(); db.refresh(p)
+    return p
+
+
+class TestPTApplicationOptionalFields:
+
+    def test_create_with_motivation(self, client, db, branch, pt_pass):
+        """PT 신청 시 motivation 함께 저장"""
+        res = client.post(
+            "/pt-applications",
+            json=_pt_payload(branch, pt_pass, motivation="WEIGHT_LOSS"),
+        )
+        assert res.status_code == 201, res.text
+        row = db.query(PTApplication).filter(
+            PTApplication.phone == "01012345678"
+        ).first()
+        assert row.motivation == "WEIGHT_LOSS"
+
+    def test_create_with_locker_and_clothes(
+        self, client, db, branch, pt_pass, locker_pass_pt, clothes_pass_pt,
+    ):
+        """락커·운동복 FK 함께 저장"""
+        res = client.post(
+            "/pt-applications",
+            json=_pt_payload(
+                branch, pt_pass,
+                locker_pass_id=str(locker_pass_pt.id),
+                clothes_pass_id=str(clothes_pass_pt.id),
+            ),
+        )
+        assert res.status_code == 201, res.text
+        row = db.query(PTApplication).filter(
+            PTApplication.phone == "01012345678"
+        ).first()
+        assert row.locker_pass_id == locker_pass_pt.id
+        assert row.clothes_pass_id == clothes_pass_pt.id
+
+    def test_create_with_wrong_branch_locker_400(
+        self, client, branch, pt_pass, locker_pass_other_branch,
+    ):
+        """타 지점 락커 사용 → 400"""
+        res = client.post(
+            "/pt-applications",
+            json=_pt_payload(
+                branch, pt_pass,
+                locker_pass_id=str(locker_pass_other_branch.id),
+            ),
+        )
+        assert res.status_code == 400
+        assert "지점" in res.json()["detail"]
+
+    def test_create_without_optionals_still_works(
+        self, client, db, branch, pt_pass,
+    ):
+        """기존 회귀 — motivation/locker/clothes 없이도 정상 생성, NULL 저장"""
+        res = client.post(
+            "/pt-applications", json=_pt_payload(branch, pt_pass),
+        )
+        assert res.status_code == 201
+        row = db.query(PTApplication).filter(
+            PTApplication.phone == "01012345678"
+        ).first()
+        assert row.motivation is None
+        assert row.locker_pass_id is None
+        assert row.clothes_pass_id is None

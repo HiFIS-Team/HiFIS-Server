@@ -317,11 +317,47 @@ def _process_expired_today(db: Session, today: date) -> None:
         )
 
 def _process_expired_holds(db: Session, today: date) -> None:
-    """종료일 지난 홀딩 레코드 자동 정리 (회원 만기일은 이미 정상 연장됨, 무음)"""
+    """종료일 지난 홀딩 레코드 자동 정리 + 영향받은 source의 status 재계산 (무음).
+
+    회원 만기일은 이미 정상 연장된 상태. 홀딩이 끝났으니 HELD에 머문 source를
+    end_date 기준으로 REGISTERED 또는 EXPIRED로 되돌린다.
+    """
     expired = db.query(Hold).filter(Hold.end_date < today).all()
     if not expired:
         return
+
+    # 영향받은 (source_type, source_id) 집합 (중복 제거)
+    affected = {(h.source_type, h.source_id) for h in expired}
+
     for h in expired:
         db.delete(h)
+    db.flush()  # 삭제 반영 → 이후 남은 hold 조회가 정확하도록
+
+    for source_type_str, source_id in affected:
+        if source_type_str == MessageSourceType.MEMBER.value:
+            target = db.query(Member).filter(Member.id == source_id).first()
+        elif source_type_str == MessageSourceType.PT_APPLICATION.value:
+            target = db.query(PTApplication).filter(
+                PTApplication.id == source_id
+            ).first()
+        else:
+            continue
+        if target is None:
+            continue
+
+        remaining = db.query(Hold).filter(
+            Hold.source_type == source_type_str,
+            Hold.source_id == source_id,
+        ).first()
+        if remaining is not None:
+            target.status = MemberStatus.HELD.value
+        elif today >= target.end_date:
+            target.status = MemberStatus.EXPIRED.value
+        else:
+            target.status = MemberStatus.REGISTERED.value
+
     db.commit()
-    logger.info("홀딩 자동 종료 정리: %d건", len(expired))
+    logger.info(
+        "홀딩 자동 종료 정리: %d건, 영향 source: %d개",
+        len(expired), len(affected),
+    )

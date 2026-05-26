@@ -13,6 +13,8 @@ from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.models.registrations.pt_application import PTApplication
+from app.models.passes.clothes import ClothesPass
+from app.models.passes.locker import LockerPass
 from app.models.passes.pt import PTPass
 from app.schemas.registrations.pt_application import (
     PTApplicationCreate,
@@ -37,15 +39,52 @@ def _ensure_pt_pass_match(db: Session, pt_pass_id: UUID, branch_id: UUID) -> Non
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="해당 지점의 수강권이 아닙니다."
         )
-    
+
+
+def _ensure_locker_pass_match(db: Session, locker_pass_id: UUID, branch_id: UUID) -> None:
+    """락커 상품 존재 + 해당 지점 상품인지 검증"""
+    pass_obj = db.query(LockerPass).filter(LockerPass.id == locker_pass_id).first()
+    if pass_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 락커 상품입니다."
+        )
+    if pass_obj.branch_id != branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="해당 지점의 락커 상품이 아닙니다."
+        )
+
+
+def _ensure_clothes_pass_match(db: Session, clothes_pass_id: UUID, branch_id: UUID) -> None:
+    """운동복 상품 존재 + 해당 지점 상품인지 검증"""
+    pass_obj = db.query(ClothesPass).filter(ClothesPass.id == clothes_pass_id).first()
+    if pass_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 운동복 상품입니다."
+        )
+    if pass_obj.branch_id != branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="해당 지점의 운동복 상품이 아닙니다."
+        )
+
+
 def create_pt_application(db: Session, data: PTApplicationCreate) -> PTApplication:
-    """PT 신청서 생성 - 지점/수강권 검증 후 저장"""
+    """PT 신청서 생성 - 지점/수강권/락커/운동복 검증 후 저장"""
     ensure_branch_exists(db, data.branch_id)
     _ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
+    if data.locker_pass_id is not None:
+        _ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+    if data.clothes_pass_id is not None:
+        _ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
 
     application = PTApplication(
         branch_id=data.branch_id,
         pt_pass_id=data.pt_pass_id,
+        locker_pass_id=data.locker_pass_id,
+        clothes_pass_id=data.clothes_pass_id,
         name=data.name,
         gender=data.gender.value,
         birth_date=data.birth_date,
@@ -56,6 +95,7 @@ def create_pt_application(db: Session, data: PTApplicationCreate) -> PTApplicati
         final_price=data.final_price,
         start_date=data.start_date,
         end_date=data.end_date,
+        motivation=data.motivation.value if data.motivation else None,
         notes=data.notes,
         agreed_notice=data.agreed_notice,
     )
@@ -146,6 +186,12 @@ def update_pt_application(
     if data.pt_pass_id is not None:
         _ensure_pt_pass_match(db, data.pt_pass_id, application.branch_id)
         application.pt_pass_id = data.pt_pass_id
+    if data.locker_pass_id is not None:
+        _ensure_locker_pass_match(db, data.locker_pass_id, application.branch_id)
+        application.locker_pass_id = data.locker_pass_id
+    if data.clothes_pass_id is not None:
+        _ensure_clothes_pass_match(db, data.clothes_pass_id, application.branch_id)
+        application.clothes_pass_id = data.clothes_pass_id
 
     if data.name is not None:
         application.name = data.name
@@ -167,6 +213,8 @@ def update_pt_application(
         application.start_date = data.start_date
     if data.end_date is not None:
         application.end_date = data.end_date
+    if data.motivation is not None:
+        application.motivation = data.motivation.value
     if data.notes is not None:
         application.notes = data.notes
 
