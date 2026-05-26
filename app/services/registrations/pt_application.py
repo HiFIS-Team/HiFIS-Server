@@ -3,12 +3,13 @@ from uuid import UUID
 import re
 from datetime import date
 
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.schemas.enums import MemberStatus, MessageSourceType, TriggerType
+from app.schemas.enums import MemberStatus, MessageSourceType, NotificationSourceType, TriggerType
 from app.schemas.messaging.message import MessageSendRequest
-from app.services.branch import ensure_branch_exists
+from app.services.admin import notification as notification_service
+from app.services.branch import ensure_branch_exists, get_branch
 from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
@@ -71,9 +72,13 @@ def _ensure_clothes_pass_match(db: Session, clothes_pass_id: UUID, branch_id: UU
         )
 
 
-def create_pt_application(db: Session, data: PTApplicationCreate) -> PTApplication:
-    """PT 신청서 생성 - 지점/수강권/락커/운동복 검증 후 저장"""
-    ensure_branch_exists(db, data.branch_id)
+def create_pt_application(
+    db: Session,
+    data: PTApplicationCreate,
+    background_tasks: BackgroundTasks | None = None,
+) -> PTApplication:
+    """PT 신청서 생성 - 지점/수강권/락커/운동복 검증 → 저장 → 회원 LMS → 어드민 알림"""
+    branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
     _ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
     if data.locker_pass_id is not None:
         _ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
@@ -122,7 +127,24 @@ def create_pt_application(db: Session, data: PTApplicationCreate) -> PTApplicati
             "PT 신청 알림 발송 실패: application_id=%s, error=%s",
             application.id, str(e),
         )
-        
+
+    # 어드민 알림 fan-out
+    try:
+        notification_service.notify_branch_event(
+            db,
+            branch_id=data.branch_id,
+            source_type=NotificationSourceType.PT_APPLICATION,
+            source_id=application.id,
+            title=f"새 PT 신청 - {branch.name}",
+            body=f"{data.name}님이 PT 신청을 했습니다.",
+            background_tasks=background_tasks,
+        )
+    except Exception as e:
+        logger.error(
+            "PT 어드민 알림 fan-out 실패: application_id=%s, error=%s",
+            application.id, str(e),
+        )
+
     return application
 
 def list_pt_applications(

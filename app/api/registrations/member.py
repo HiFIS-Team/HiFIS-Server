@@ -1,7 +1,7 @@
 from uuid import UUID
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
@@ -18,9 +18,14 @@ public_router = APIRouter(prefix="/members", tags=["members"])
 
 @public_router.post("", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("30/minute")
-def create_member(request: Request, payload: MemberCreate, db: Session = Depends(get_db)):
-    """회원가입 신청 (Public)"""
-    return member_service.create_member(db, payload)
+def create_member(
+    request: Request,
+    payload: MemberCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """회원가입 신청 (Public). 어드민 알림은 BackgroundTasks로 응답 후 발송."""
+    return member_service.create_member(db, payload, background_tasks)
 
 # Admin - 인증 의존성은 인증 도입 후 부착
 admin_router = APIRouter(prefix="/admin/members", tags=["admin-members"])

@@ -3,12 +3,13 @@ from uuid import UUID
 import re
 from datetime import date
 
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.schemas.enums import MessageSourceType, TriggerType
+from app.schemas.enums import MessageSourceType, NotificationSourceType, TriggerType
 from app.schemas.messaging.message import MessageSendRequest
-from app.services.branch import ensure_branch_exists
+from app.services.admin import notification as notification_service
+from app.services.branch import ensure_branch_exists, get_branch
 from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
@@ -67,9 +68,13 @@ def _ensure_clothes_pass_match(db: Session, pass_id: UUID, branch_id: UUID) -> N
         )
 
     
-def create_member(db: Session, data: MemberCreate) -> Member:
-    """회원가입 신청서 생성 - 지점/회원권 검증 후 저장"""
-    ensure_branch_exists(db, data.branch_id)
+def create_member(
+    db: Session,
+    data: MemberCreate,
+    background_tasks: BackgroundTasks | None = None,
+) -> Member:
+    """회원가입 신청서 생성 - 지점/회원권 검증 → 저장 → 회원 LMS → 어드민 알림"""
+    branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
     _ensure_membership_pass_match(db, data.membership_pass_id, data.branch_id)
 
     if data.locker_pass_id is not None:
@@ -117,6 +122,23 @@ def create_member(db: Session, data: MemberCreate) -> Member:
         logger.error(
             "회원 등록 알림 발송 실패: member_id=%s, error=%s",
             member.id, str(e)
+        )
+
+    # 어드민 알림 fan-out (DB + Web Push)
+    try:
+        notification_service.notify_branch_event(
+            db,
+            branch_id=data.branch_id,
+            source_type=NotificationSourceType.MEMBER,
+            source_id=member.id,
+            title=f"새 회원가입 - {branch.name}",
+            body=f"{data.name}님이 회원 등록을 신청했습니다.",
+            background_tasks=background_tasks,
+        )
+    except Exception as e:
+        logger.error(
+            "회원 어드민 알림 fan-out 실패: member_id=%s, error=%s",
+            member.id, str(e),
         )
 
     return member

@@ -30,6 +30,12 @@ class Settings(BaseSettings):
 
     APP_BASE_URL: str = "http://localhost:8000"
 
+    # Web Push (VAPID) - python -m py_vapid 로 키페어 생성 후 .env에 저장
+    # 비어있으면 push 발송 자체를 건너뜀 (DB 알림은 정상 저장)
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_CONTACT_EMAIL: str = ""
+
     CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = []
 
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
