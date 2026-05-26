@@ -58,7 +58,7 @@ def list_reservation(db: Session, branch_id: UUID | None, current_admin: Admin) 
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
 
     query = db.query(Reservation)
-    if branch_id is not None:
+    if effective_branch_id is not None:
         query = query.filter(Reservation.branch_id == effective_branch_id)
     return query.order_by(Reservation.created_at.desc()).all()
 

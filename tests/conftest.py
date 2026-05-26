@@ -13,12 +13,16 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.deps import get_db
 from app.main import app
 from app.models.admin.admin import Admin
 from app.models.branch import Branch
+
+# 테스트 중에는 rate limiting 비활성화 (반복 호출 테스트가 429로 깨지는 것 방지)
+limiter.enabled = False
 
 # 테스트 DB URL: 기존 DATABASE_URL에서 DB 이름만 hifis_test로 교체
 TEST_DATABASE_URL = settings.DATABASE_URL.rsplit("/", 1)[0] + "/hifis_test"

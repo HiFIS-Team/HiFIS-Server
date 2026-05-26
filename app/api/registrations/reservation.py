@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
+from app.core.rate_limit import limiter
 from app.db.deps import get_db
 from app.models.admin.admin import Admin
 from app.schemas.registrations.reservation import ReservationCreate, ReservationResponse
@@ -13,7 +14,8 @@ from app.services.registrations import reservation as reservation_service
 public_router = APIRouter(prefix="/reservations", tags=["reservations"])
 
 @public_router.post("", response_model=ReservationResponse, status_code=status.HTTP_201_CREATED)
-def create_reservation(payload: ReservationCreate, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def create_reservation(request: Request, payload: ReservationCreate, db: Session = Depends(get_db)):
     """예약 신청 생성 (Public)"""
     return reservation_service.create_reservation(db, payload)
 

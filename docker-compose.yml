@@ -17,6 +17,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # 로그 무한 증가 방지 - 파일당 10MB, 최대 5개 회전
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   app:
     build: .
@@ -33,6 +39,12 @@ services:
       - "8000:8000"
     # 마이그레이션 자동 실행 후 서버 시작
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # 로그 무한 증가 방지 - 파일당 10MB, 최대 5개 회전
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   pg_data:

@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, require_super_admin
+from app.core.rate_limit import limiter
 from app.db.deps import get_db
 from app.models.admin.admin import Admin
 from app.schemas.admin.admin import (
@@ -26,26 +27,31 @@ from app.services.admin import admin as admin_service
 public_router = APIRouter(prefix="/admin", tags=["admin-auth"])
 
 @public_router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
     """관리자 로그인 - JWT 발급 (status=ACTIVE만 가능)"""
     return admin_service.login(db, payload)
 
 @public_router.post(
     "/signup", response_model=AdminResponse, status_code=status.HTTP_201_CREATED
 )
-def signup(payload: AdminSignup, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def signup(request: Request, payload: AdminSignup, db: Session = Depends(get_db)):
     """FC 셀프 회원가입 - 계정 생성 + 인증번호 메일 발송"""
     return admin_service.signup(db, payload)
 
 @public_router.post("/verify-email", response_model=AdminResponse)
-def verify_email(payload: EmailVerifyRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def verify_email(request: Request, payload: EmailVerifyRequest, db: Session = Depends(get_db)):
     """이메일 인증번호 검증 - PENDING_EMAIL → PENDING_APPROVAL"""
     return admin_service.verify_email(db, payload.email, payload.code)
 
 @public_router.post(
     "/resend-verification", status_code=status.HTTP_204_NO_CONTENT
 )
+@limiter.limit("5/minute")
 def resend_verification(
+    request: Request,
     payload: ResendVerificationRequest, db: Session = Depends(get_db)
 ):
     """이메일 인증번호 재발송 (만료/분실 시)"""
@@ -54,7 +60,9 @@ def resend_verification(
 @public_router.post(
     "/password-reset/request", status_code=status.HTTP_204_NO_CONTENT
 )
+@limiter.limit("5/minute")
 def password_reset_request(
+    request: Request,
     payload: PasswordResetRequest, db: Session = Depends(get_db)
 ):
     """비밀번호 재설정 요청 - 인증번호 메일 발송"""
@@ -63,7 +71,9 @@ def password_reset_request(
 @public_router.post(
     "/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT
 )
+@limiter.limit("10/minute")
 def password_reset_confirm(
+    request: Request,
     payload: PasswordResetConfirm, db: Session = Depends(get_db)
 ):
     """비밀번호 재설정 확정 - 인증번호 검증 후 새 비번 적용"""
