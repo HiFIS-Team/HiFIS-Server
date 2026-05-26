@@ -136,8 +136,10 @@ def list_pt_applications(
         end_date_from: date | None,
         end_date_to: date | None,
         current_admin: Admin,
-) -> list[PTApplication]:
-    """PT 신청 목록 조회 + 필터 (FC는 자기 지점 강제)"""
+        page: int,
+        page_size: int,
+) -> tuple[list[PTApplication], int]:
+    """PT 신청 목록 조회 + 필터 + 페이지네이션 (FC는 자기 지점 강제)"""
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
 
     query = db.query(PTApplication)
@@ -159,7 +161,15 @@ def list_pt_applications(
         query = query.filter(PTApplication.end_date >= end_date_from)
     if end_date_to is not None:
         query = query.filter(PTApplication.end_date <= end_date_to)
-    return query.order_by(PTApplication.created_at.desc()).all()
+
+    total = query.count()
+    items = (
+        query.order_by(PTApplication.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total
 
 def get_pt_application(db: Session, application_id: UUID, current_admin: Admin,) -> PTApplication:
     """단일 PT 신청 조회 - 없으면 404"""

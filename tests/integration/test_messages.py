@@ -68,14 +68,14 @@ class TestListMessages:
         """SUPER_ADMIN은 전 지점 메시지 이력을 다 봄"""
         res = client.get("/admin/messages", headers=auth_super)
         assert res.status_code == 200
-        recipients = {m["recipient"] for m in res.json()}
+        recipients = {m["recipient"] for m in res.json()["items"]}
         assert {"01011111111", "01022222222"} <= recipients
 
     def test_fc_sees_only_own_branch(self, client, auth_fc, two_branch_messages):
         """FC는 자기 지점 메시지 이력만 조회"""
         res = client.get("/admin/messages", headers=auth_fc)
         assert res.status_code == 200
-        recipients = {m["recipient"] for m in res.json()}
+        recipients = {m["recipient"] for m in res.json()["items"]}
         assert "01011111111" in recipients
         assert "01022222222" not in recipients
 
@@ -86,8 +86,9 @@ class TestListMessages:
         )
         assert res.status_code == 200
         body = res.json()
-        assert len(body) == 1
-        assert body[0]["trigger_type"] == "EXPIRED_TODAY"
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["trigger_type"] == "EXPIRED_TODAY"
 
     def test_no_auth_401(self, client):
         res = client.get("/admin/messages")

@@ -26,6 +26,7 @@ from app.api.registrations import pt_application as pt_application_api
 from app.api.admin import admin as admin_api
 from app.api.messaging import message as message_api
 from app.api.admin import stats as stats_api
+from app.api.admin import dashboard as dashboard_api
 from app.api import hold as hold_api
 from app.api.passes import locker as locker_pass_api
 from app.api.passes import clothes as clothes_pass_api
@@ -80,6 +81,7 @@ app.include_router(admin_api.me_router)
 app.include_router(message_api.router) 
 app.include_router(message_api.admin_router) 
 app.include_router(stats_api.admin_router)
+app.include_router(dashboard_api.admin_router)
 app.include_router(hold_api.admin_router)
 app.include_router(locker_pass_api.public_router)
 app.include_router(locker_pass_api.admin_router)

@@ -49,7 +49,7 @@ class TestMemberListPermissions:
         """SUPER_ADMIN은 branch 필터 없으면 전 지점 회원 다 봄"""
         res = client.get("/admin/members", headers=auth_super)
         assert res.status_code == 200
-        members = res.json()
+        members = res.json()["items"]
         names = {m["name"] for m in members}
         assert "화순회원" in names
         assert "첨단회원" in names
@@ -60,7 +60,7 @@ class TestMemberListPermissions:
         """FC는 branch_id 안 줘도 자기 지점만 자동 필터"""
         res = client.get("/admin/members", headers=auth_fc)
         assert res.status_code == 200
-        members = res.json()
+        members = res.json()["items"]
         names = {m["name"] for m in members}
         assert "화순회원" in names
         assert "첨단회원" not in names
@@ -75,7 +75,7 @@ class TestMemberListPermissions:
             headers=auth_fc,
         )
         assert res.status_code == 200
-        names = {m["name"] for m in res.json()}
+        names = {m["name"] for m in res.json()["items"]}
         assert "첨단회원" not in names
         assert "화순회원" in names
 

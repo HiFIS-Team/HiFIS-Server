@@ -132,8 +132,13 @@ def list_members(
         end_date_from: date | None,
         end_date_to: date | None,
         current_admin: Admin,
-) -> list[Member]:
-    """회원 목록 조회 + 필터 (FC는 자기 지점 강제)"""
+        page: int,
+        page_size: int,
+) -> tuple[list[Member], int]:
+    """회원 목록 조회 + 필터 + 페이지네이션 (FC는 자기 지점 강제)
+
+    반환 (items, total). 전체 카운트·차트는 /admin/dashboard/summary 사용.
+    """
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
 
     query = db.query(Member)
@@ -155,7 +160,15 @@ def list_members(
         query = query.filter(Member.end_date >= end_date_from)
     if end_date_to is not None:
         query = query.filter(Member.end_date <= end_date_to)
-    return query.order_by(Member.created_at.desc()).all()
+
+    total = query.count()
+    items = (
+        query.order_by(Member.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total
 
 
 def get_member(db: Session, member_id: UUID, current_admin: Admin) -> Member:

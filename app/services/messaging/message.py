@@ -73,8 +73,10 @@ def list_messages(
     sent_from: date | None,
     sent_to: date | None,
     current_admin: Admin,
-) -> list[Message]:
-    """메시지 발송 이력 조회 + 필터 (FC는 자기 지점만, 최신순)"""
+    page: int,
+    page_size: int,
+) -> tuple[list[Message], int]:
+    """메시지 발송 이력 + 필터 + 페이지네이션 (FC는 자기 지점만, 최신순)"""
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
 
     query = db.query(Message)
@@ -96,7 +98,15 @@ def list_messages(
         query = query.filter(func.date(Message.sent_at) >= sent_from)
     if sent_to is not None:
         query = query.filter(func.date(Message.sent_at) <= sent_to)
-    return query.order_by(Message.sent_at.desc()).all()
+
+    total = query.count()
+    items = (
+        query.order_by(Message.sent_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total
 
 def get_message(db: Session, message_id: UUID, current_admin: Admin) -> Message:
     """메시지 단건 조회 - 없으면 404, FC는 자기 지점만"""
