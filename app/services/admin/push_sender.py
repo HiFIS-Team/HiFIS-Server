@@ -8,6 +8,7 @@
 """
 import json
 import logging
+from urllib.parse import urlparse
 from uuid import UUID
 
 from py_vapid import Vapid01
@@ -42,10 +43,15 @@ def send_to_admin(admin_id: UUID, payload: dict) -> None:
 
         data = json.dumps(payload, ensure_ascii=False)
         vapid_obj = Vapid01.from_raw(settings.VAPID_PRIVATE_KEY.encode())
-        vapid_claims = {"sub": f"mailto:{settings.VAPID_CONTACT_EMAIL}"}
 
         for sub in subs:
             try:
+                # Apple Web Push 는 aud(endpoint origin) strict 검사 — endpoint별 명시
+                parsed = urlparse(sub.endpoint)
+                vapid_claims = {
+                    "sub": f"mailto:{settings.VAPID_CONTACT_EMAIL}",
+                    "aud": f"{parsed.scheme}://{parsed.netloc}",
+                }
                 webpush(
                     subscription_info={
                         "endpoint": sub.endpoint,
