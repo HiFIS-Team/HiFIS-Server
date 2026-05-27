@@ -39,6 +39,7 @@ class PTApplicationCreate(BaseModel):
     phone: str = Field(..., min_length=9, max_length=20)
     address: str = Field(..., min_length=1, max_length=255)
     referral: Referral
+    referral_detail: str | None = Field(default=None, max_length=100)
     payment_method: PaymentMethod
     final_price: int = Field(..., ge=0)
     start_date: date
@@ -83,6 +84,7 @@ class PTApplicationUpdate(BaseModel):
     phone: str | None = Field(default=None, min_length=9, max_length=20)
     address: str | None = Field(default=None, min_length=1, max_length=255)
     referral: Referral | None = None
+    referral_detail: str | None = Field(default=None, max_length=100)
     payment_method: PaymentMethod | None = None
     final_price: int | None = Field(default=None, ge=0)
     start_date: date | None = None
@@ -133,6 +135,7 @@ class PTApplicationResponse(BaseModel):
     phone: str
     address: str
     referral: Referral
+    referral_detail: str | None
     payment_method: PaymentMethod
     final_price: int
     start_date: date

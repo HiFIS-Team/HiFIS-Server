@@ -55,6 +55,7 @@ class PTApplication(Base):
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     address: Mapped[str] = mapped_column(String(255), nullable=False)
     referral: Mapped[str] = mapped_column(String(20), nullable=False)
+    referral_detail: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # 결제 정보
     payment_method: Mapped[str] = mapped_column(String(20), nullable=False)

@@ -91,6 +91,7 @@ def create_member(
         phone=data.phone,
         address=data.address,
         referral=data.referral.value,
+        referral_detail=(data.referral_detail or "").strip() or None,
         payment_method=data.payment_method.value,
         final_price=data.final_price,
         start_date=data.start_date,
@@ -230,6 +231,9 @@ def update_member(
         member.address = data.address
     if data.referral is not None:
         member.referral = data.referral.value
+    if data.referral_detail is not None:
+        cleaned = data.referral_detail.strip()
+        member.referral_detail = cleaned or None
     if data.payment_method is not None:
         member.payment_method = data.payment_method.value
     if data.final_price is not None:
