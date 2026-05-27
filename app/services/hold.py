@@ -51,7 +51,12 @@ def _recalc_source_status(
     """Hold 변경(생성/삭제) 후 source.status 재계산.
 
     남은 hold가 있으면 HELD 유지, 없으면 end_date 기준 REGISTERED/EXPIRED.
+
+    NOTE: SessionLocal이 autoflush=False이므로, 앞선 `db.delete(hold)`가
+    이 함수의 query에 반영되도록 명시적으로 flush 한다. 빼면 방금 삭제한 hold가
+    여전히 query에 잡혀 status가 HELD에 굳는 버그가 발생.
     """
+    db.flush()
     remaining = db.query(Hold).filter(
         Hold.source_type == source_type.value,
         Hold.source_id == source_id,
