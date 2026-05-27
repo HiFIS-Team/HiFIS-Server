@@ -10,6 +10,7 @@ import json
 import logging
 from uuid import UUID
 
+from py_vapid import Vapid01
 from pywebpush import WebPushException, webpush
 
 from app.core.config import settings
@@ -20,7 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 def send_to_admin(admin_id: UUID, payload: dict) -> None:
-    """admin_id의 모든 push 구독에 발송. VAPID 미설정이면 no-op."""
+    """admin_id의 모든 push 구독에 발송. VAPID 미설정이면 no-op.
+
+    VAPID_PRIVATE_KEY는 URL-safe base64(32바이트 raw scalar) 형식.
+    Vapid01.from_raw가 그 형식을 그대로 받는다.
+    """
     if not settings.VAPID_PRIVATE_KEY:
         logger.debug("VAPID_PRIVATE_KEY 미설정 - push 발송 건너뜀")
         return
@@ -36,6 +41,7 @@ def send_to_admin(admin_id: UUID, payload: dict) -> None:
             return
 
         data = json.dumps(payload, ensure_ascii=False)
+        vapid_obj = Vapid01.from_raw(settings.VAPID_PRIVATE_KEY.encode())
         vapid_claims = {"sub": f"mailto:{settings.VAPID_CONTACT_EMAIL}"}
 
         for sub in subs:
@@ -46,7 +52,7 @@ def send_to_admin(admin_id: UUID, payload: dict) -> None:
                         "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
                     },
                     data=data,
-                    vapid_private_key=settings.VAPID_PRIVATE_KEY,
+                    vapid_private_key=vapid_obj,
                     vapid_claims=vapid_claims,
                 )
             except WebPushException as e:
