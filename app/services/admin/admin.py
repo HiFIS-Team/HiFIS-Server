@@ -60,6 +60,7 @@ def signup(db: Session, data: AdminSignup) -> Admin:
         name=data.name,
         password_hash=hash_password(data.password),
         role=AdminRole.FC.value,
+        position=data.position.value,
         status=AdminStatus.PENDING_EMAIL.value,
         branch_id=data.branch_id,
     )

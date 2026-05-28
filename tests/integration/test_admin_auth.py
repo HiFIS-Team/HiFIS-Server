@@ -16,6 +16,7 @@ def _signup_payload(branch, **overrides):
         "name": "신규FC",
         "password": "fcpass1234",
         "branch_id": str(branch.id),
+        "position": "FC",
     }
     base.update(overrides)
     return base
@@ -54,6 +55,7 @@ class TestSignup:
         res = client.post("/admin/signup", json={
             "email": "x@test.com", "name": "x",
             "password": "fcpass1234", "branch_id": str(uuid4()),
+            "position": "FC",
         })
         assert res.status_code == 404
 

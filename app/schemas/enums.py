@@ -86,6 +86,13 @@ class NotificationSourceType(str, Enum):
     PT_APPLICATION = "PT_APPLICATION"  # 새 PT 신청
     FC_SIGNUP = "FC_SIGNUP"          # FC 가입 인증 완료 → 승인 대기
 
+class Position(str, Enum):
+    """관리자 직책 - 권한 차이 없음(다 본인 지점 권한), 표시·메시지 발신자 직책용"""
+    MANAGER = "MANAGER"           # 점장
+    TEAM_LEADER = "TEAM_LEADER"   # 팀장
+    TRAINER = "TRAINER"           # 트레이너
+    FC = "FC"                     # FC
+
 # === 한국어 라벨 매핑 (프론트 표시용) ===
 
 GENDER_LABELS: dict[Gender, str] = {
@@ -142,6 +149,13 @@ SOURCE_TYPE_LABELS: dict[MessageSourceType, str] = {
     MessageSourceType.PT_APPLICATION: "PT 신청",
     MessageSourceType.RESERVATION: "예약",
     MessageSourceType.HOLD: "홀딩",
+}
+
+POSITION_LABELS: dict[Position, str] = {
+    Position.MANAGER: "점장",
+    Position.TEAM_LEADER: "팀장",
+    Position.TRAINER: "트레이너",
+    Position.FC: "FC",
 }
 
 # === 옵션 응답 헬퍼 ===

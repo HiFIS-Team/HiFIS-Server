@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.schemas.enums import Position
+
 class AdminRole(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     FC = "FC"
@@ -27,6 +29,7 @@ class AdminSignup(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     password: str = Field(..., min_length=8, max_length=100)
     branch_id: UUID = Field(..., description="소속 지점")
+    position: Position = Field(..., description="직책 (점장/팀장/트레이너/FC)")
 
 class EmailVerifyRequest(BaseModel):
     """이메일 인증번호 검증 요청 (Public)"""
@@ -48,6 +51,7 @@ class AdminResponse(BaseModel):
     email: str
     name: str
     role: AdminRole
+    position: Position | None  # SUPER_ADMIN은 NULL
     status: AdminStatus
     branch_id: UUID | None
     created_at: datetime
