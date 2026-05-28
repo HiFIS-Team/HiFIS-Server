@@ -51,3 +51,4 @@ propcache==0.5.2
 requests==2.34.2
 urllib3==2.7.0
 yarl==1.24.2
+openpyxl==3.1.5

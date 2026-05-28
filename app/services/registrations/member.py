@@ -277,4 +277,45 @@ def delete_member(db: Session, member_id: UUID, current_admin: Admin) -> None:
     db.delete(member)
     db.commit()
     logger.info("회원 삭제 완료: member_id=%s", member_id)
-    
+
+
+def bulk_import_members_silent(
+    db: Session, members_data: list[dict],
+) -> tuple[int, list[dict]]:
+    """기존 SaaS에서 옮겨온 회원 일괄 import - 알림 발송 0, INSERT만.
+
+    members_data: 검증·매핑이 끝난 dict 리스트. 각 dict는 Member 컬럼 키워드.
+        필수: branch_id, membership_pass_id, name, gender, birth_date, phone,
+              address, referral, payment_method, final_price, start_date,
+              end_date, motivation, agreed_terms, status, created_at
+        선택: locker_pass_id, clothes_pass_id, referral_detail, agreed_marketing
+
+    반환: (성공 수, 실패 row 리스트). 실패 row는 {'index', 'name', 'error'} 형식.
+
+    NOTE:
+    - LMS·Push 알림 전혀 발송 X (3000명 INSERT 시 폭탄 방지)
+    - created_at은 원본 가입일 그대로 박음 → D+7/14/30 트리거가 옛 회원에겐 자동 미발송
+    - 한 row 실패해도 나머지는 계속 진행 (DB savepoint per row)
+    """
+    success = 0
+    failed: list[dict] = []
+
+    for idx, data in enumerate(members_data):
+        try:
+            # 트랜잭션 안전성: 한 row가 깨져도 다음 row 진행
+            with db.begin_nested():
+                member = Member(**data)
+                db.add(member)
+            success += 1
+        except Exception as e:
+            failed.append({
+                "index": idx,
+                "name": data.get("name", "?"),
+                "error": str(e),
+            })
+
+    db.commit()
+    logger.info(
+        "bulk import 완료: 성공 %d, 실패 %d", success, len(failed),
+    )
+    return success, failed
