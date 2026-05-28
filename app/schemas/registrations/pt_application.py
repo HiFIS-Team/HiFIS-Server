@@ -47,6 +47,10 @@ class PTApplicationCreate(BaseModel):
     motivation: Motivation | None = None
     notes: str | None = Field(default=None, max_length=500)
     agreed_notice: bool = Field(..., description="유의사항 확인 (true 필수)")
+    agreed_marketing: bool = Field(
+        default=False,
+        description="마케팅 정보 수신 동의 (선택) - EXPIRED_FOLLOWUP 등 마케팅성 트리거 발송에만 영향",
+    )
 
     @field_validator("phone")
     @classmethod
@@ -91,6 +95,7 @@ class PTApplicationUpdate(BaseModel):
     end_date: date | None = None
     motivation: Motivation | None = None
     notes: str | None = Field(default=None, max_length=500)
+    agreed_marketing: bool | None = None
 
     @field_validator("phone")
     @classmethod
@@ -142,5 +147,6 @@ class PTApplicationResponse(BaseModel):
     end_date: date
     motivation: Motivation | None
     notes: str | None
+    agreed_marketing: bool
     status: MemberStatus
     created_at: datetime

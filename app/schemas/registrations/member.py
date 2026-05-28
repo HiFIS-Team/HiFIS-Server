@@ -46,6 +46,10 @@ class MemberCreate(BaseModel):
     clothes_pass_id: UUID | None = None
     motivation: Motivation
     agreed_terms: bool = Field(..., description="운영 회칙 동의 (true 필수)")
+    agreed_marketing: bool = Field(
+        default=False,
+        description="마케팅 정보 수신 동의 (선택) - EXPIRED_FOLLOWUP 등 마케팅성 트리거 발송에만 영향",
+    )
 
     @field_validator("phone")
     @classmethod
@@ -89,6 +93,7 @@ class MemberUpdate(BaseModel):
     locker_pass_id: UUID | None = None
     clothes_pass_id: UUID | None = None
     motivation: Motivation | None = None
+    agreed_marketing: bool | None = None
 
     @field_validator("phone")
     @classmethod
@@ -139,5 +144,6 @@ class MemberResponse(BaseModel):
     locker_pass_id: UUID | None
     clothes_pass_id: UUID | None
     motivation: Motivation
+    agreed_marketing: bool
     status: MemberStatus
     created_at: datetime

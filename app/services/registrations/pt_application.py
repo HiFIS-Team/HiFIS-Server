@@ -104,6 +104,7 @@ def create_pt_application(
         motivation=data.motivation.value if data.motivation else None,
         notes=data.notes,
         agreed_notice=data.agreed_notice,
+        agreed_marketing=data.agreed_marketing,
     )
     db.add(application)
     db.commit()
@@ -253,6 +254,8 @@ def update_pt_application(
         application.motivation = data.motivation.value
     if data.notes is not None:
         application.notes = data.notes
+    if data.agreed_marketing is not None:
+        application.agreed_marketing = data.agreed_marketing
 
     db.commit()
     db.refresh(application)

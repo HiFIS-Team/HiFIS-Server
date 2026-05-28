@@ -219,12 +219,13 @@ def _process_expire_status(db: Session, today: date) -> None:
 def _process_expired_followup(
     db: Session, today: date, days: int, trigger: TriggerType,
 ) -> None:
-    """만기 +N일에 재등록 권유"""
+    """만기 +N일에 재등록 권유 - 마케팅성이라 agreed_marketing=True 만 발송 (법 준수)"""
     target_date = today - timedelta(days=days)
 
     members = db.query(Member).filter(
         Member.end_date == target_date,
         Member.status == MemberStatus.EXPIRED.value,
+        Member.agreed_marketing == True,  # noqa: E712 - SQLAlchemy 필터
     ).all()
     for m in members:
         _try_send(
@@ -240,6 +241,7 @@ def _process_expired_followup(
     apps = db.query(PTApplication).filter(
         PTApplication.end_date == target_date,
         PTApplication.status == MemberStatus.EXPIRED.value,
+        PTApplication.agreed_marketing == True,  # noqa: E712
     ).all()
     for a in apps:
         _try_send(

@@ -59,6 +59,10 @@ class Member(Base):
     # 부가 옵션
     motivation: Mapped[str] = mapped_column(String(20), nullable=False)
     agreed_terms: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # 마케팅 정보 수신 동의 - EXPIRED_FOLLOWUP 등 마케팅성 트리거 발송 필터용
+    agreed_marketing: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False,
+    )
 
     # 상태 관리
     status: Mapped[str] = mapped_column(

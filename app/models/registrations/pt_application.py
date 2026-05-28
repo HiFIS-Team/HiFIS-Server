@@ -69,6 +69,10 @@ class PTApplication(Base):
     motivation: Mapped[str | None] = mapped_column(String(20), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     agreed_notice: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # 마케팅 정보 수신 동의 - EXPIRED_FOLLOWUP 등 마케팅성 트리거 발송 필터용
+    agreed_marketing: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False,
+    )
 
     # 상태 관ㄹ
     status: Mapped[str] = mapped_column(

@@ -100,6 +100,7 @@ def create_member(
         clothes_pass_id=data.clothes_pass_id,           
         motivation=data.motivation.value,
         agreed_terms=data.agreed_terms,
+        agreed_marketing=data.agreed_marketing,
     )
     db.add(member)
     db.commit()
@@ -250,7 +251,9 @@ def update_member(
         member.clothes_pass_id = data.clothes_pass_id
     if data.motivation is not None:
         member.motivation = data.motivation.value
-    
+    if data.agreed_marketing is not None:
+        member.agreed_marketing = data.agreed_marketing
+
     db.commit()
     db.refresh(member)
     return member
