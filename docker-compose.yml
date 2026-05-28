@@ -10,8 +10,11 @@ services:
       PGTZ: Asia/Seoul     # Postgres 세션 타임존
     volumes:
       - pg_data:/var/lib/postgresql/data
+    # 호스트 loopback(127.0.0.1)에만 바인딩 - 외부 IP로 Postgres 접근 차단 (보안).
+    # 컨테이너끼리는 service name 'db'로 통신하므로 영향 없음.
+    # 친구 서버에서 외부 psql 접근도 필요 없으면 이 ports 블록 자체 삭제 가능.
     ports:
-      - "5432:5432"        # 로컬에서 psql/툴로 직접 접속 필요 없으면 이 줄 삭제 OK
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${HIFIS_DB_USER} -d ${HIFIS_DB_NAME}"]
       interval: 5s

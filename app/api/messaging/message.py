@@ -1,26 +1,23 @@
+"""알림톡 발송 이력 조회 라우터 (Admin).
+
+발송 자체는 service 함수(`message_service.send_message`)를 직접 호출.
+별도 internal HTTP endpoint를 노출하지 않음 - 외부 도용 시 LMS 폭탄 위험.
+"""
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db.deps import get_db
 from app.schemas.common import Page
-from app.schemas.messaging.message import MessageResponse, MessageSendRequest
+from app.schemas.messaging.message import MessageResponse
 from app.services.messaging import message as message_service
 from app.api.deps import get_current_admin
 from app.models.admin.admin import Admin
 from app.schemas.enums import MessageSourceType, MessageStatus, TriggerType
 
-# Internal - 스케줄러 또는 다른 서비스에서 호출 (인증 없음, 사내용)
-router = APIRouter(prefix="/messages", tags=["messages"])
 
-@router.post("/send", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
-def send_message(payload: MessageSendRequest, db: Session = Depends(get_db)):
-    """알림톡 발송 (Internal — 스케줄러 호출용)"""
-    return message_service.send_message(db, payload)
-
-# Admin - 발송 이력 조회
 admin_router = APIRouter(prefix="/admin/messages", tags=["admin-messages"])
 
 @admin_router.get("", response_model=Page[MessageResponse])
@@ -54,4 +51,3 @@ def admin_get_message(
 ):
     """메시지 단건 조회 (Admin)"""
     return message_service.get_message(db, message_id, current_admin)
-
