@@ -383,9 +383,12 @@ def refresh_access_token(db: Session, refresh_token: str) -> TokenResponse:
         access_token=new_access, refresh_token=new_refresh, admin=admin
     )
 
-def list_admins(db: Session) -> list[Admin]:
-    """관리자 전체 목록 조회"""
-    return db.query(Admin).order_by(Admin.created_at.asc()).all()
+def list_admins(db: Session, branch_id: UUID | None = None) -> list[Admin]:
+    """관리자 목록 조회. branch_id 지정 시 해당 지점 소속 admin만 (발송자 변경 select용)."""
+    query = db.query(Admin).order_by(Admin.created_at.asc())
+    if branch_id is not None:
+        query = query.filter(Admin.branch_id == branch_id)
+    return query.all()
 
 def delete_admin(db: Session, admin_id: UUID) -> None:
     """FC 계정 삭제 (SUPER_ADMIN 전용) - SUPER_ADMIN 계정은 삭제 불가"""

@@ -124,11 +124,15 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 @admin_router.get("", response_model=list[AdminResponse])
 def list_admins(
+    branch_id: UUID | None = None,
     db: Session = Depends(get_db),
     _: Admin = Depends(require_super_admin),
 ):
-    """관리자 전체 목록 조회 (SUPER_ADMIN 전용)"""
-    return admin_service.list_admins(db)
+    """관리자 목록 조회 (SUPER_ADMIN 전용).
+
+    branch_id 지정 시 해당 지점 소속 admin만 반환 (예: 발송자 변경 select).
+    """
+    return admin_service.list_admins(db, branch_id)
 
 @admin_router.delete("/{admin_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_admin(

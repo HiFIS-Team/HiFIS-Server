@@ -3,6 +3,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.enums import Position
+
+
+class MessengerAdminBrief(BaseModel):
+    """지점 안부 메시지 발송자 요약 (이름·직책 표시용)"""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    position: Position | None
+
+
 class BranchCreate(BaseModel):
     """지점 등록 요청"""
     name: str = Field(..., min_length=1, max_length=50)
@@ -26,7 +38,7 @@ class BranchUpdate(BaseModel):
     )
 
 class BranchResponse(BaseModel):
-    """지점 응답"""
+    """지점 응답 - messenger nested로 발송자 이름·직책 같이 내려감"""
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -35,4 +47,5 @@ class BranchResponse(BaseModel):
     kakao_url: str | None
     naver_place_url: str | None
     messenger_admin_id: UUID | None
+    messenger: MessengerAdminBrief | None
     created_at: datetime
