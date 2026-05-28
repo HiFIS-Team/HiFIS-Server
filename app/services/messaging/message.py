@@ -35,8 +35,13 @@ def send_message(db: Session, data: MessageSendRequest) -> Message:
     )
 
     
-    # 3. Solapi 발송 (LMS 자동 제목 생성 막으려고 subject 빈 값 전달)
-    success, _error = solapi.send_sms(data.recipient, content, subject=f"{branch.name} 안내")
+    # 3. Solapi 발송 - 지점 번호를 발신자로 (Solapi에 등록된 번호여야 함)
+    success, _error = solapi.send_sms(
+        data.recipient,
+        content,
+        subject=f"{branch.name} 안내",
+        sender=branch.phone,
+    )
     msg_status = (
         MessageStatus.SUCCESS.value if success else MessageStatus.FAIL.value
     )
