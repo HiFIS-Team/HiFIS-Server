@@ -43,6 +43,8 @@ class MemberStatus(str, Enum):
     HELD = "HELD"              # 홀딩 중 (활성 hold 존재)
     EXPIRED = "EXPIRED"        # 만기
 
+# 안부 트리거 - 진짜 사람이 보내는 톤(자기소개+본문, 푸터 없음). 발송자 이름·직책 필요.
+# 나머지 트리거는 시스템 톤(헤더+본문+푸터, 직원 정보 없음).
 class TriggerType(str, Enum):
     """알림톡 발송 트리거 (11종)"""
 
@@ -156,6 +158,17 @@ POSITION_LABELS: dict[Position, str] = {
     Position.TEAM_LEADER: "팀장",
     Position.TRAINER: "트레이너",
     Position.FC: "FC",
+}
+
+# 안부 트리거 - 발송자 이름·직책 박힘, 푸터 없음 (진짜 사람이 보내는 톤)
+PERSONAL_TRIGGERS: set[TriggerType] = {
+    TriggerType.D_PLUS_7,
+    TriggerType.D_PLUS_14,
+    TriggerType.D_PLUS_30,
+    TriggerType.EXPIRY_SOON_5,
+    TriggerType.EXPIRY_SOON_2,
+    TriggerType.EXPIRED_TODAY,
+    TriggerType.EXPIRED_FOLLOWUP,
 }
 
 # === 옵션 응답 헬퍼 ===

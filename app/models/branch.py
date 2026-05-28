@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import String, DateTime, func
+from sqlalchemy import ForeignKey, String, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm  import Mapped, mapped_column
 
@@ -20,6 +20,18 @@ class Branch(Base):
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     kakao_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     naver_place_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 안부 메시지(D+N, 만기 안내 등) 발송자로 고정될 admin - 없으면 시스템 양식으로 폴백
+    # use_alter=True: admins ↔ branches 순환 FK라 별도 ALTER TABLE로 추가 (drop 시 cycle 해결)
+    messenger_admin_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            "admins.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="branches_messenger_admin_id_fkey",
+        ),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

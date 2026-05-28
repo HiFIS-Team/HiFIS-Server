@@ -3,11 +3,29 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.admin.admin import Admin
 from app.models.branch import Branch
 from app.schemas.branch import BranchCreate, BranchUpdate
 
+
+def _ensure_messenger_admin_match(
+    db: Session, messenger_admin_id: UUID, branch_id: UUID,
+) -> None:
+    """발송자 admin이 존재 + 해당 지점 소속인지 검증."""
+    admin = db.query(Admin).filter(Admin.id == messenger_admin_id).first()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 관리자입니다.",
+        )
+    if admin.branch_id != branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="해당 지점 소속 관리자가 아닙니다.",
+        )
+
 def create_branch(db: Session, data: BranchCreate) -> Branch:
-    """지점 등록"""
+    """지점 등록 - messenger_admin_id는 같은 지점이어야 하나 신규 지점이면 보통 NULL"""
     branch = Branch(
         name=data.name,
         phone=data.phone,
@@ -15,6 +33,12 @@ def create_branch(db: Session, data: BranchCreate) -> Branch:
         naver_place_url=data.naver_place_url,
     )
     db.add(branch)
+    db.flush()  # branch.id 확보 (messenger 검증용)
+
+    if data.messenger_admin_id is not None:
+        _ensure_messenger_admin_match(db, data.messenger_admin_id, branch.id)
+        branch.messenger_admin_id = data.messenger_admin_id
+
     db.commit()
     db.refresh(branch)
     return branch
@@ -57,6 +81,9 @@ def update_branch(db: Session, branch_id: UUID, data: BranchUpdate) -> Branch:
         branch.kakao_url = data.kakao_url
     if data.naver_place_url is not None:
         branch.naver_place_url = data.naver_place_url
+    if data.messenger_admin_id is not None:
+        _ensure_messenger_admin_match(db, data.messenger_admin_id, branch.id)
+        branch.messenger_admin_id = data.messenger_admin_id
 
     db.commit()
     db.refresh(branch)

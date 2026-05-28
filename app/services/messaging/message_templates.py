@@ -1,8 +1,15 @@
-"""트리거별 알림톡 고정 양식 - 이름·지점정보 치환 (B안: 통일 헤더)"""
-from app.schemas.enums import TriggerType
+"""트리거별 알림톡 고정 양식 - 두 가지 톤
 
-# 모든 양식 공통 헤더 (B안 통일 인사말)
+- 시스템 트리거(예약·등록·홀딩 등): 헤더 + 본문 + 푸터 (지점 정보)
+- 안부 트리거(D+N, 만기 안내 등): "○○○님 안녕하세요 :) 지점 발송자 직책 입니다." + 본문 (푸터 없음)
+"""
+from app.schemas.enums import PERSONAL_TRIGGERS, POSITION_LABELS, Position, TriggerType
+
+# 시스템 트리거 공통 헤더 (B안 통일 인사말)
 _HEADER = "{name}님 {branch_name} 입니다!"
+
+# 안부 트리거 공통 헤더 (발송자 자기소개)
+_PERSONAL_HEADER = "{name}님 안녕하세요 :) {branch_name} {sender_name} {sender_position} 입니다."
 
 # 트리거별 본문 (헤더/푸터 제외) - 문장·줄바꿈·중복 정리, 사실 정보는 원본 유지
 _BODIES: dict[str, str] = {
@@ -92,10 +99,35 @@ def render_message(
     branch_phone: str,
     naver_place_url: str | None = None,
     body_override: str | None = None,
+    sender_name: str | None = None,
+    sender_position: str | None = None,
 ) -> str:
-    """트리거 양식에 이름·지점정보 치환 - body_override 있으면 본문으로 사용 (홀딩 등 AI 생성)"""
+    """트리거 양식에 이름·지점정보 치환.
+
+    - 안부 트리거 + sender 정보 있음 → "○○○님 안녕하세요 :) 지점 이름 직책 입니다." + 본문 (푸터 없음)
+    - 그 외 (시스템 트리거이거나 sender 정보 없음) → 헤더 + 본문 + 푸터
+    - body_override 있으면 트리거 본문 대신 사용 (홀딩 AI 본문 케이스)
+    """
     body = body_override or _BODIES.get(trigger, "안녕하세요, 반갑습니다 :)")
+
+    is_personal = (
+        trigger in {t.value for t in PERSONAL_TRIGGERS}
+        and sender_name and sender_position
+    )
+    if is_personal:
+        # 직책 라벨 변환 (TEAM_LEADER → 팀장 등). 매핑 못 찾으면 코드 그대로.
+        try:
+            position_label = POSITION_LABELS[Position(sender_position)]
+        except (ValueError, KeyError):
+            position_label = sender_position
+        header = _PERSONAL_HEADER.format(
+            name=name,
+            branch_name=branch_name,
+            sender_name=sender_name,
+            sender_position=position_label,
+        )
+        return f"{header}\n\n{body}"
+
     header = _HEADER.replace("{name}", name).replace("{branch_name}", branch_name)
     footer = _build_footer(branch_name, branch_phone, naver_place_url)
     return f"{header}\n\n{body}\n\n{footer}"
-

@@ -17,6 +17,18 @@ from app.services.branch import get_branch
 from app.services.messaging import message_templates, solapi
 from app.utils.masking import mask_phone
 
+
+def _get_messenger_info(db: Session, branch) -> tuple[str | None, str | None]:
+    """지점의 안부 메시지 발송자 이름·직책 조회. messenger_admin_id 없거나
+    admin이 사라졌으면 (None, None) → 시스템 양식으로 폴백.
+    """
+    if branch.messenger_admin_id is None:
+        return None, None
+    admin = db.query(Admin).filter(Admin.id == branch.messenger_admin_id).first()
+    if admin is None:
+        return None, None
+    return admin.name, admin.position
+
 logger = logging.getLogger(__name__)
 
 def send_message(db: Session, data: MessageSendRequest) -> Message:
@@ -24,7 +36,8 @@ def send_message(db: Session, data: MessageSendRequest) -> Message:
     # 1. 지점 조회 (branch_name 치환 + branch_id 검증, 없으면 404)
     branch = get_branch(db, data.branch_id)
 
-    # 2. 트리거 양식 렌더링 (이름·지점정보 치환, body_override 있으면 우선)
+    # 2. 트리거 양식 렌더링 (안부 트리거는 발송자 이름·직책 박힘, 시스템은 헤더+푸터)
+    sender_name, sender_position = _get_messenger_info(db, branch)
     content = message_templates.render_message(
         trigger=data.trigger_type.value,
         name=data.name,
@@ -32,6 +45,8 @@ def send_message(db: Session, data: MessageSendRequest) -> Message:
         branch_phone=branch.phone,
         naver_place_url=branch.naver_place_url,
         body_override=data.body_override,
+        sender_name=sender_name,
+        sender_position=sender_position,
     )
 
     
