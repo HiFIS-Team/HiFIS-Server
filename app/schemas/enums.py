@@ -95,6 +95,17 @@ class Position(str, Enum):
     TRAINER = "TRAINER"           # 트레이너
     FC = "FC"                     # FC
 
+class AdminRole(str, Enum):
+    """관리자 권한 - SUPER_ADMIN(전 지점) / FC(본인 지점만)"""
+    SUPER_ADMIN = "SUPER_ADMIN"
+    FC = "FC"
+
+class AdminStatus(str, Enum):
+    """FC 계정 상태 - 가입 → 이메일 인증 → SUPER_ADMIN 승인 → 활성화"""
+    PENDING_EMAIL = "PENDING_EMAIL"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    ACTIVE = "ACTIVE"
+
 # === 한국어 라벨 매핑 (프론트 표시용) ===
 
 GENDER_LABELS: dict[Gender, str] = {

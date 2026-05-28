@@ -41,6 +41,24 @@ logging.basicConfig(
 # httpx는 외부 API 호출(Solapi·Claude)마다 INFO 로그를 찍어 소음이 큼 → WARNING으로
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+# Sentry 에러 추적 - DSN 비어있으면 init 건너뜀(개발 환경 no-op)
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.SENTRY_ENVIRONMENT,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        # 회원·관리자 전화번호·이메일 마스킹 위해 PII 자동 첨부 끄기
+        send_default_pii=False,
+        integrations=[
+            FastApiIntegration(),
+            SqlalchemyIntegration(),
+        ],
+    )
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """앱 시작 시 스케줄러 켜고, 종료 시 끄기"""

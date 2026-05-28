@@ -14,62 +14,19 @@ from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.models.registrations.pt_application import PTApplication
-from app.models.passes.clothes import ClothesPass
-from app.models.passes.locker import LockerPass
-from app.models.passes.pt import PTPass
 from app.schemas.registrations.pt_application import (
     PTApplicationCreate,
     PTApplicationStatusUpdate,
     PTApplicationUpdate,
 )
+from app.services.passes._validators import (
+    ensure_clothes_pass_match,
+    ensure_locker_pass_match,
+    ensure_pt_pass_match,
+)
 from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
-
-
-def _ensure_pt_pass_match(db: Session, pt_pass_id: UUID, branch_id: UUID) -> None:
-    """수강권 존재 + 해당 지점 수강권인지 검증"""
-    pass_obj = db.query(PTPass).filter(PTPass.id == pt_pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 수강권입니다."
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 수강권이 아닙니다."
-        )
-
-
-def _ensure_locker_pass_match(db: Session, locker_pass_id: UUID, branch_id: UUID) -> None:
-    """락커 상품 존재 + 해당 지점 상품인지 검증"""
-    pass_obj = db.query(LockerPass).filter(LockerPass.id == locker_pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 락커 상품입니다."
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 락커 상품이 아닙니다."
-        )
-
-
-def _ensure_clothes_pass_match(db: Session, clothes_pass_id: UUID, branch_id: UUID) -> None:
-    """운동복 상품 존재 + 해당 지점 상품인지 검증"""
-    pass_obj = db.query(ClothesPass).filter(ClothesPass.id == clothes_pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 운동복 상품입니다."
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 운동복 상품이 아닙니다."
-        )
 
 
 def create_pt_application(
@@ -79,11 +36,11 @@ def create_pt_application(
 ) -> PTApplication:
     """PT 신청서 생성 - 지점/수강권/락커/운동복 검증 → 저장 → 회원 LMS → 어드민 알림"""
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
-    _ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
+    ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
     if data.locker_pass_id is not None:
-        _ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+        ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
     if data.clothes_pass_id is not None:
-        _ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+        ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
 
     application = PTApplication(
         branch_id=data.branch_id,
@@ -218,13 +175,13 @@ def update_pt_application(
     application = get_pt_application(db, application_id, current_admin)
 
     if data.pt_pass_id is not None:
-        _ensure_pt_pass_match(db, data.pt_pass_id, application.branch_id)
+        ensure_pt_pass_match(db, data.pt_pass_id, application.branch_id)
         application.pt_pass_id = data.pt_pass_id
     if data.locker_pass_id is not None:
-        _ensure_locker_pass_match(db, data.locker_pass_id, application.branch_id)
+        ensure_locker_pass_match(db, data.locker_pass_id, application.branch_id)
         application.locker_pass_id = data.locker_pass_id
     if data.clothes_pass_id is not None:
-        _ensure_clothes_pass_match(db, data.clothes_pass_id, application.branch_id)
+        ensure_clothes_pass_match(db, data.clothes_pass_id, application.branch_id)
         application.clothes_pass_id = data.clothes_pass_id
 
     if data.name is not None:

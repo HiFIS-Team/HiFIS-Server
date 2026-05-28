@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     VAPID_PRIVATE_KEY: str = ""
     VAPID_CONTACT_EMAIL: str = ""
 
+    # Sentry - 비어있으면 no-op (개발 환경에선 비워둠, 운영에서만 DSN 박기)
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = "production"
+    # 트래픽 샘플링 - 0.0~1.0. 작은 사장님 사업이라 0.0(에러만)으로 충분
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+
     CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = []
 
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")

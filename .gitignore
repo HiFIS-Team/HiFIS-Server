@@ -6,6 +6,9 @@ __pycache__/
 # ai
 .claude
 
+# 개인 노트 / 배포 메모 (Git 미추적)
+docs/
+
 # C extensions
 *.so
 

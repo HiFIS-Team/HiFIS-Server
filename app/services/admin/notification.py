@@ -17,8 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models.admin.admin import Admin
 from app.models.admin.notification import Notification
-from app.schemas.admin.admin import AdminRole, AdminStatus
-from app.schemas.enums import NotificationSourceType
+from app.schemas.enums import AdminRole, AdminStatus, NotificationSourceType
 from app.services.admin import push_sender
 
 logger = logging.getLogger(__name__)

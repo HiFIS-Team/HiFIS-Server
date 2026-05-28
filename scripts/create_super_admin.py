@@ -21,7 +21,7 @@ import app.main  # noqa: F401
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.admin.admin import Admin
-from app.schemas.admin.admin import AdminRole, AdminStatus
+from app.schemas.enums import AdminRole, AdminStatus
 
 
 def main() -> None:

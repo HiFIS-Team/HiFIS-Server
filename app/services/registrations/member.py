@@ -14,60 +14,17 @@ from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.models.registrations.member import Member
-from app.models.passes.clothes import ClothesPass
-from app.models.passes.locker import LockerPass
-from app.models.passes.membership import MembershipPass
 from app.schemas.registrations.member import MemberCreate, MemberStatusUpdate, MemberUpdate, MemberStatus
+from app.services.passes._validators import (
+    ensure_clothes_pass_match,
+    ensure_locker_pass_match,
+    ensure_membership_pass_match,
+)
 from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_membership_pass_match( db: Session, membership_pass_id: UUID, branch_id: UUID):
-    """회원권 존재 + 해당 지점 회원권인지 검증"""
-    pass_obj = db.query(MembershipPass).filter(
-        MembershipPass.id == membership_pass_id
-    ).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 회원권입니다.",
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 회원권이 아닙니다."
-        )
-    
-def _ensure_locker_pass_match(db: Session, pass_id: UUID, branch_id: UUID) -> None:
-    """락커 상품 존재 + 해당 지점 상품인지 검증"""
-    pass_obj = db.query(LockerPass).filter(LockerPass.id == pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 락커 상품입니다.",
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 락커 상품이 아닙니다.",
-        )
-
-def _ensure_clothes_pass_match(db: Session, pass_id: UUID, branch_id: UUID) -> None:
-    """운동복 상품 존재 + 해당 지점 상품인지 검증"""
-    pass_obj = db.query(ClothesPass).filter(ClothesPass.id == pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 운동복 상품입니다.",
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 운동복 상품이 아닙니다.",
-        )
-
-    
 def create_member(
     db: Session,
     data: MemberCreate,
@@ -75,12 +32,12 @@ def create_member(
 ) -> Member:
     """회원가입 신청서 생성 - 지점/회원권 검증 → 저장 → 회원 LMS → 어드민 알림"""
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
-    _ensure_membership_pass_match(db, data.membership_pass_id, data.branch_id)
+    ensure_membership_pass_match(db, data.membership_pass_id, data.branch_id)
 
     if data.locker_pass_id is not None:
-        _ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+        ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
     if data.clothes_pass_id is not None:
-        _ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+        ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
 
     member = Member(
         branch_id=data.branch_id,
@@ -215,7 +172,7 @@ def update_member(
     member = get_member(db, member_id, current_admin)
 
     if data.membership_pass_id is not None:
-        _ensure_membership_pass_match(
+        ensure_membership_pass_match(
             db, data.membership_pass_id, member.branch_id
         )
         member.membership_pass_id = data.membership_pass_id
@@ -244,10 +201,10 @@ def update_member(
     if data.end_date is not None:
         member.end_date = data.end_date
     if data.locker_pass_id is not None:
-        _ensure_locker_pass_match(db, data.locker_pass_id, member.branch_id)
+        ensure_locker_pass_match(db, data.locker_pass_id, member.branch_id)
         member.locker_pass_id = data.locker_pass_id
     if data.clothes_pass_id is not None:
-        _ensure_clothes_pass_match(db, data.clothes_pass_id, member.branch_id)
+        ensure_clothes_pass_match(db, data.clothes_pass_id, member.branch_id)
         member.clothes_pass_id = data.clothes_pass_id
     if data.motivation is not None:
         member.motivation = data.motivation.value
