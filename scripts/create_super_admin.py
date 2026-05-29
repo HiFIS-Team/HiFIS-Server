@@ -13,7 +13,11 @@
 """
 import argparse
 import getpass
+import os
 import sys
+
+# 어디서 실행되든 app 모듈 import되게
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # app.main import → 모든 모델·라우터 한 번에 로드 (Admin FK가 다른 모델 참조하므로 필수)
 import app.main  # noqa: F401

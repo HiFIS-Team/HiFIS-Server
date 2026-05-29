@@ -1,261 +1,474 @@
-"""기존 SaaS(브로제이·다짐) → HiFIS 회원 일괄 import 스크립트.
+"""기존 SaaS(브로제이·다짐) → HiFIS 회원·PT 일괄 import 스크립트.
+
+사장님 SaaS export 파일은 .xls 확장자지만 내부는 HTML 테이블 (pandas.read_html 사용).
+한 셀에 회원의 모든 이용권·대여권 이력이 들어있어 파서로 활성 항목만 추출.
 
 용도:
-    docker compose exec app python scripts/import_members.py <엑셀파일> [--dry-run]
+    docker compose exec app python scripts/import_members.py <엑셀파일> --branch <지점명> [--dry-run]
 
-엑셀 표준 컬럼 (1행 헤더, 사장님 데이터 받고 매핑 조정 필요할 수 있음):
-    지점명 | 이름 | 전화번호 | 성별 | 생년월일 | 주소 | 회원권 | 시작일 |
-    만기일 | 결제방법 | 결제금액 | 가입일 | 마케팅동의
+예시:
+    docker compose exec app python scripts/import_members.py /tmp/members.xls --branch "피트니스스타 화순점" --dry-run
 
-    - 지점명: "피트니스스타 화순점" 등 (Branch.name 정확히 일치)
-    - 성별: M / F / 남 / 여
-    - 생년월일: 1990-01-01 또는 datetime
-    - 회원권: "1개월" 등 (해당 지점 MembershipPass.name 일치)
-    - 결제방법: CASH / CARD / TRANSFER / GIFT_CARD
-    - 마케팅동의: TRUE / FALSE / Y / N / O / X / (빈 칸=False)
-    - 가입일: 옛 SaaS의 원본 가입일 (created_at 그대로 박음 - D+N 트리거 자동 차단용)
+엑셀 헤더 (브로제이 표준):
+    상태 | 이름 | 생년월일 | 나이 | 연락처 | 보유 이용권 | 보유 대여권 |
+    구독 플랜 | 락커룸/락커번호 | 구분 | 최종 만료일 | 최근 구매일 | 최근출석일 |
+    BROJ 운톡 | 출석번호 | 특이사항 | 운동목적 | 방문경로 | 상담 담당자 | 간단 주소
 
-동작:
-    1. 엑셀 파싱
-    2. 지점·회원권 lookup (이름 → UUID)
-    3. 검증 (필수 컬럼·형식·매핑)
-    4. INSERT (LMS·Push 발송 0)
-    5. 실패 row는 import_failed.csv로 저장
+처리 정책:
+- 미등록 상태는 import 제외
+- PT 키워드(`퍼스널`·`1:1`·`2:1`·`PT`) 포함 이용권은 PTApplication으로 분리
+- 일반 회원권은 Member로
+- 한 사람이 둘 다 보유하면 Member + PTApplication 둘 다 INSERT
+- 회원권/락커/운동복 이름이 HiFIS DB에 매핑 안 되면 실패 row로 리포트
+- final_price는 매핑된 회원권 + 락커 + 운동복의 cash_price 합산 자동 계산
+- 성별·결제정보·운동목적 같은 누락 컬럼은 NULL로 박음 (사장님이 사후 입력)
 
 옵션:
-    --dry-run: 검증만 하고 INSERT 안 함 (사장님 데이터 사전 확인용)
+    --branch <지점명>: 지점 이름 (필수, Branch.name 정확히 일치)
+    --dry-run: 검증만 수행, INSERT 안 함
 """
 import argparse
 import csv
+import os
+import re
 import sys
 from datetime import date, datetime
 from pathlib import Path
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
+
+# 어디서 실행되든 (docker compose exec, 호스트 등) app 모듈 import되게
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 모든 모델 로드 (FK 해석)
 import app.main  # noqa: F401
 
-from openpyxl import load_workbook
+from bs4 import BeautifulSoup
 
 from app.db.session import SessionLocal
 from app.models.branch import Branch
+from app.models.passes.clothes import ClothesPass
+from app.models.passes.locker import LockerPass
 from app.models.passes.membership import MembershipPass
-from app.services.registrations.member import bulk_import_members_silent
+from app.models.passes.pt import PTPass
+from app.models.registrations.member import Member
+from app.models.registrations.pt_application import PTApplication
 from app.utils.validators import is_valid_phone, normalize_phone
+
 
 _KST = ZoneInfo("Asia/Seoul")
 
-# 엑셀 헤더 → 내부 키 (사장님 엑셀 헤더 다르면 여기 매핑만 수정)
-_COLUMN_MAP = {
-    "지점명": "branch_name",
-    "이름": "name",
-    "전화번호": "phone",
-    "성별": "gender",
-    "생년월일": "birth_date",
-    "주소": "address",
-    "회원권": "pass_name",
-    "시작일": "start_date",
-    "만기일": "end_date",
-    "결제방법": "payment_method",
-    "결제금액": "final_price",
-    "가입일": "created_at",
-    "마케팅동의": "agreed_marketing",
+# 엑셀 상태 → MemberStatus
+_STATUS_MAP = {
+    "활성": "REGISTERED",
+    "임박": "REGISTERED",
+    "홀딩": "HELD",
+    # "미등록"은 제외
 }
 
-_GENDER_MAP = {"M": "M", "F": "F", "남": "M", "여": "F", "남자": "M", "여자": "F"}
-_PAYMENT_MAP = {
-    "CASH": "CASH", "현금": "CASH",
-    "CARD": "CARD", "카드": "CARD",
-    "TRANSFER": "TRANSFER", "계좌이체": "TRANSFER", "이체": "TRANSFER",
-    "GIFT_CARD": "GIFT_CARD", "상품권": "GIFT_CARD",
-}
-_BOOL_MAP = {
-    "TRUE": True, "FALSE": False,
-    "Y": True, "N": False, "O": True, "X": False,
-    "동의": True, "거부": False, "예": True, "아니오": False,
-    "1": True, "0": False,
+# 엑셀 방문경로 → Referral
+_REFERRAL_MAP = {
+    "SNS": "INSTAGRAM",
+    "간판 또는 현수막": "BANNER",
+    "지인추천": "FRIEND",
+    "직원소개": "FRIEND",
+    "기타": "OTHER",
+    "선택 안함": "OTHER",
+    "-": "OTHER",
 }
 
+# 엑셀 운동목적 → Motivation (없으면 NULL로 박음)
+_MOTIVATION_MAP = {
+    "체형교정": "POSTURE_CORRECTION",
+    "다이어트": "WEIGHT_LOSS",
+    "체중감량": "WEIGHT_LOSS",
+    "근육 증가": "MUSCLE_GAIN",
+    "건강 개선": "HEALTH_IMPROVEMENT",
+    "스트레스 해소": "STRESS_RELIEF",
+    "외모 변화": "APPEARANCE",
+    "주변 권유": "RECOMMENDATION",
+    "부상 / 통증 예방": "INJURY_PREVENTION",
+    # "선택 안함"은 NULL
+}
 
-def _to_date(val) -> date:
-    """엑셀 셀 → date 변환. datetime/date 그대로, 문자열은 파싱."""
-    if val is None or val == "":
-        raise ValueError("날짜 비어있음")
-    if isinstance(val, datetime):
-        return val.date()
-    if isinstance(val, date):
-        return val
-    if isinstance(val, str):
-        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
-            try:
-                return datetime.strptime(val.strip(), fmt).date()
-            except ValueError:
-                continue
-    raise ValueError(f"날짜 형식 알 수 없음: {val!r}")
+# PT 키워드 — 이용권 이름에 포함되면 PTApplication으로 분리
+_PT_KEYWORDS = ["퍼스널", "PT", "1:1", "2:1", "1대1", "2대1"]
 
+# 활성 분류 — 이 표시가 붙은 이용권만 추출
+_ACTIVE_STATES = {"활성", "임박", "홀딩"}
 
-def _to_datetime_kst(val) -> datetime:
-    """엑셀 셀 → 가입일 (KST timestamptz)"""
-    d = _to_date(val)
-    return datetime(d.year, d.month, d.day, 12, 0, 0, tzinfo=_KST)
-
-
-def _to_bool(val) -> bool:
-    """엑셀 셀 → bool. 빈 값은 False (보수적)"""
-    if val is None or val == "":
-        return False
-    if isinstance(val, bool):
-        return val
-    s = str(val).strip().upper()
-    if s in _BOOL_MAP:
-        return _BOOL_MAP[s]
-    return False
+# "(상태)" 포함 이용권 패턴: "이용권명(상태) YYYY.MM.DD ~ YYYY.MM.DD"
+_PASS_PATTERN = re.compile(
+    r"(.+?)\(([^)]+)\)\s*"
+    r"(\d{4}\.\d{2}\.\d{2})\s*~\s*(\d{4}\.\d{2}\.\d{2})"
+)
 
 
-def _to_int(val) -> int:
-    if val is None or val == "":
-        return 0
-    if isinstance(val, (int, float)):
-        return int(val)
-    s = str(val).strip().replace(",", "").replace("원", "")
-    return int(float(s))
+class ParsedPass(NamedTuple):
+    """이용권/대여권 파싱 결과."""
+    name: str          # 이용권 이름 (괄호 제외)
+    state: str         # 활성·임박·홀딩·만료·예정·status 없음 등
+    start_date: date
+    end_date: date
 
 
-def parse_excel(path: str) -> list[dict]:
-    """엑셀 1행을 헤더로 보고 dict 리스트로 반환."""
-    wb = load_workbook(path, data_only=True)
-    ws = wb.active
-
-    rows_iter = ws.iter_rows(values_only=True)
-    headers = next(rows_iter)
-    header_keys = []
-    for h in headers:
-        if h is None:
-            header_keys.append(None)
-            continue
-        key = _COLUMN_MAP.get(str(h).strip())
-        header_keys.append(key)
-
-    raw_rows = []
-    for row in rows_iter:
-        if all(v is None or v == "" for v in row):
-            continue  # 빈 행 스킵
-        d = {}
-        for key, val in zip(header_keys, row):
-            if key is not None:
-                d[key] = val
-        raw_rows.append(d)
-    return raw_rows
+def _parse_date(s: str) -> date | None:
+    """`2026.05.27` → date"""
+    try:
+        return datetime.strptime(s.strip(), "%Y.%m.%d").date()
+    except (ValueError, AttributeError):
+        return None
 
 
-def validate_and_map(
-    raw_rows: list[dict],
-    branches: dict[str, "Branch"],
-    passes_by_branch: dict[str, dict[str, "MembershipPass"]],
-) -> tuple[list[dict], list[dict]]:
-    """엑셀 raw row → Member INSERT 가능한 dict로 검증·변환.
+def _parse_birth_date(v) -> date | None:
+    """생년월일 셀 (`1988.04.28` 문자열) → date"""
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    return _parse_date(str(v))
 
-    반환: (검증 통과 row 리스트, 실패 row 리스트)
+
+def parse_passes(cell: str) -> list[ParsedPass]:
+    """한 셀의 이용권 이력 문자열에서 모든 이용권 추출.
+
+    예: "(1개월) 이벤트 당첨자(활성) 2026.05.26 ~ 2026.11.25 1개월(만료) 2023.12.06 ~ 2024.01.05"
+        → [(이름="(1개월) 이벤트 당첨자", 상태="활성", ...), (이름="1개월", 상태="만료", ...)]
     """
-    today = datetime.now(_KST).date()
-    validated: list[dict] = []
-    failed: list[dict] = []
+    if not cell:
+        return []
+    results = []
+    for m in _PASS_PATTERN.finditer(str(cell)):
+        name = m.group(1).strip()
+        state = m.group(2).strip()
+        sd = _parse_date(m.group(3))
+        ed = _parse_date(m.group(4))
+        if sd and ed:
+            results.append(ParsedPass(name=name, state=state, start_date=sd, end_date=ed))
+    return results
 
-    for idx, row in enumerate(raw_rows, start=2):  # 엑셀 2행부터 데이터
-        name = row.get("name") or "?"
-        try:
-            # 지점 매핑
-            branch_name = (row.get("branch_name") or "").strip()
-            if branch_name not in branches:
-                raise ValueError(f"지점 없음: {branch_name!r}")
-            branch = branches[branch_name]
 
-            # 회원권 매핑
-            pass_name = (row.get("pass_name") or "").strip()
-            passes = passes_by_branch.get(branch.id, {})
-            if pass_name not in passes:
-                raise ValueError(
-                    f"회원권 없음: {pass_name!r} ({branch_name})"
-                )
-            membership_pass = passes[pass_name]
+def filter_active(passes: list[ParsedPass]) -> list[ParsedPass]:
+    """활성·임박·홀딩 상태인 것만 반환."""
+    return [p for p in passes if p.state in _ACTIVE_STATES]
 
-            # 전화번호
-            phone_raw = str(row.get("phone") or "").strip()
-            if not is_valid_phone(phone_raw):
-                raise ValueError(f"전화번호 형식: {phone_raw!r}")
-            phone = normalize_phone(phone_raw)
 
-            # 성별
-            gender_raw = str(row.get("gender") or "").strip()
-            gender = _GENDER_MAP.get(gender_raw.upper()) or _GENDER_MAP.get(gender_raw)
-            if not gender:
-                raise ValueError(f"성별: {gender_raw!r}")
+def is_pt_pass(name: str) -> bool:
+    """이용권 이름에 PT 키워드 포함 여부."""
+    return any(k in name for k in _PT_KEYWORDS)
 
-            # 결제 방법
-            pm_raw = str(row.get("payment_method") or "").strip()
-            payment_method = _PAYMENT_MAP.get(pm_raw.upper()) or _PAYMENT_MAP.get(pm_raw)
-            if not payment_method:
-                raise ValueError(f"결제방법: {pm_raw!r}")
 
-            # 날짜들
-            birth_date = _to_date(row.get("birth_date"))
-            start_date = _to_date(row.get("start_date"))
-            end_date = _to_date(row.get("end_date"))
-            created_at = _to_datetime_kst(row.get("created_at"))
+def _normalize(s: str) -> str:
+    """이름 매칭용 정규화 - 공백·탭 차이 무시 ('학생 1개월' = '학생1개월')."""
+    return "".join(s.split())
 
-            if end_date < start_date:
-                raise ValueError("end_date < start_date")
 
-            # status: 오늘 기준 활성/만료
-            status = "REGISTERED" if end_date >= today else "EXPIRED"
+def lookup_membership_pass(
+    name: str, branch_id, memberships: dict, pt_passes: dict,
+) -> tuple[str, object | None]:
+    """이용권 이름으로 회원권 또는 PT 수강권 검색.
 
-            validated.append({
+    반환: (도메인: 'MEMBER' / 'PT' / 'UNKNOWN', pass 객체 or None)
+    """
+    key = (branch_id, _normalize(name))
+    if is_pt_pass(name):
+        pass_obj = pt_passes.get(key)
+        return ("PT", pass_obj)
+    pass_obj = memberships.get(key)
+    return ("MEMBER", pass_obj)
+
+
+# 락커·운동복 기간 임계값 (일수) → 매핑할 사장님 등록 이름
+# 엑셀은 "락커 대여권" 한 종류라 시작~만기 일수로 1개월/3개월/6개월 분류
+_LOCKER_BUCKETS = [
+    (45, "락커"),         # ~45일 → 1개월짜리
+    (135, "락커 3개월"),  # 46~135일 → 3개월
+    (None, "락커 6개월"), # 136일+ → 6개월
+]
+_CLOTHES_BUCKETS = [
+    (45, "운동복"),
+    (135, "운동복 3개월"),
+    (None, "운동복 6개월"),
+]
+
+
+def _bucket_name(days: int, buckets) -> str:
+    """기간(일수) → 매핑할 상품 이름."""
+    for upper, name in buckets:
+        if upper is None or days <= upper:
+            return name
+    return buckets[-1][1]
+
+
+def lookup_locker(
+    passes: list[ParsedPass], branch_id, lockers: dict, clothes: dict,
+) -> tuple[object | None, object | None]:
+    """대여권 목록에서 활성 락커·운동복 추출.
+
+    엑셀은 "락커 대여권"·"운동복 대여권" 한 종류 → 기간으로 1/3/6개월 자동 매핑.
+    """
+    locker = None
+    cloth = None
+    for p in passes:
+        days = (p.end_date - p.start_date).days
+        if "락커" in p.name:
+            name = _bucket_name(days, _LOCKER_BUCKETS)
+            locker = lockers.get((branch_id, _normalize(name)))
+        elif "운동복" in p.name:
+            name = _bucket_name(days, _CLOTHES_BUCKETS)
+            cloth = clothes.get((branch_id, _normalize(name)))
+    return locker, cloth
+
+
+def parse_excel_html(path: str) -> list[dict]:
+    """SaaS export(.xls 확장자, 실제는 HTML) → row dict 리스트.
+
+    첫 행을 헤더로, 나머지를 데이터로.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        soup = BeautifulSoup(f, "html.parser")
+
+    table = soup.find("table")
+    if table is None:
+        raise RuntimeError("엑셀에서 <table>을 찾을 수 없습니다")
+
+    rows = table.find_all("tr")
+    if len(rows) < 2:
+        raise RuntimeError("데이터 행 없음")
+
+    headers = [c.get_text(strip=True) for c in rows[0].find_all(["th", "td"])]
+    data: list[dict] = []
+    for tr in rows[1:]:
+        cells = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
+        if not cells or all(not v for v in cells):
+            continue
+        data.append(dict(zip(headers, cells)))
+    return data
+
+
+def build_row_data(
+    row,
+    branch,
+    memberships: dict,
+    pt_passes: dict,
+    lockers: dict,
+    clothes: dict,
+) -> tuple[list[dict], list[dict], list[str]]:
+    """엑셀 1행 → (Member dicts, PTApplication dicts, 경고 메시지).
+
+    한 사람이 회원권 + PT 둘 다 보유하면 양쪽 리스트에 들어감.
+    경고는 매핑 실패·누락 정보 등.
+    """
+    warnings: list[str] = []
+    member_rows: list[dict] = []
+    pt_rows: list[dict] = []
+
+    # 1. 상태 필터 (미등록 제외)
+    excel_status = str(row.get("상태") or "").strip()
+    if excel_status not in _STATUS_MAP:
+        warnings.append(f"제외(상태={excel_status!r})")
+        return [], [], warnings
+    hifis_status = _STATUS_MAP[excel_status]
+
+    # 2. 필수 값
+    name = str(row.get("이름") or "").strip()
+    if not name:
+        warnings.append("이름 없음 → 제외")
+        return [], [], warnings
+
+    phone_raw = str(row.get("연락처") or "").strip()
+    if not is_valid_phone(phone_raw):
+        warnings.append(f"전화번호 형식 오류({phone_raw!r}) → 제외")
+        return [], [], warnings
+    phone = normalize_phone(phone_raw)
+
+    # 생년월일 — 미입력·파싱 실패면 NULL로 박음 (모델 nullable)
+    birth_date = _parse_birth_date(row.get("생년월일"))
+
+    # 3. 이용권 파싱
+    membership_str = str(row.get("보유 이용권") or "")
+    active_passes = filter_active(parse_passes(membership_str))
+    if not active_passes:
+        warnings.append("활성 이용권 없음 → 제외")
+        return [], [], warnings
+
+    rental_str = str(row.get("보유 대여권") or "")
+    active_rentals = filter_active(parse_passes(rental_str))
+
+    # 4. 이용권을 회원권/PT로 분리
+    member_passes_with_obj: list[tuple[ParsedPass, object | None]] = []
+    pt_passes_with_obj: list[tuple[ParsedPass, object | None]] = []
+    for p in active_passes:
+        domain, pass_obj = lookup_membership_pass(
+            p.name, branch.id, memberships, pt_passes,
+        )
+        if domain == "PT":
+            pt_passes_with_obj.append((p, pass_obj))
+        else:
+            member_passes_with_obj.append((p, pass_obj))
+
+    # 5. 매핑 안 된 이용권 경고
+    unmapped_names = [
+        p.name for p, obj in member_passes_with_obj + pt_passes_with_obj
+        if obj is None
+    ]
+    if unmapped_names:
+        warnings.append(
+            f"미매핑 이용권: {unmapped_names} → HiFIS 어드민에 회원권 등록 필요"
+        )
+
+    # 6. 대여권 매핑 (락커·운동복)
+    locker_obj, clothes_obj = lookup_locker(
+        active_rentals, branch.id, lockers, clothes,
+    )
+
+    # 7. 공통 필드
+    referral_raw = str(row.get("방문경로") or "").strip()
+    referral = _REFERRAL_MAP.get(referral_raw, "OTHER")
+
+    motivation_raw = str(row.get("운동목적") or "").strip()
+    motivation = _MOTIVATION_MAP.get(motivation_raw)  # None이면 NULL
+
+    address = str(row.get("간단 주소") or "").strip() or "-"
+
+    last_purchase = _parse_birth_date(row.get("최근 구매일"))
+    final_expiry = _parse_birth_date(row.get("최종 만료일"))
+    if last_purchase is None or final_expiry is None:
+        warnings.append("최근 구매일/만료일 파싱 실패 → 제외")
+        return [], [], warnings
+    # created_at은 KST 정오로 (D+N 트리거 시간 안정성)
+    created_at_dt = datetime(
+        last_purchase.year, last_purchase.month, last_purchase.day,
+        12, 0, 0, tzinfo=_KST,
+    )
+
+    # 8. Member dict 생성 (회원권 보유 시)
+    if member_passes_with_obj:
+        # 첫 번째 활성 회원권을 대표로 박음
+        head_pass, head_obj = member_passes_with_obj[0]
+        if head_obj is None:
+            # 회원권 매핑 안 됨 → Member도 못 만듦 (membership_pass_id 필수)
+            warnings.append("회원권 매핑 실패로 Member 미생성")
+        else:
+            final_price = head_obj.cash_price
+            if locker_obj:
+                final_price += locker_obj.cash_price
+            if clothes_obj:
+                final_price += clothes_obj.cash_price
+
+            member_rows.append({
                 "branch_id": branch.id,
-                "membership_pass_id": membership_pass.id,
-                "name": str(name).strip(),
-                "gender": gender,
+                "membership_pass_id": head_obj.id,
+                "locker_pass_id": locker_obj.id if locker_obj else None,
+                "clothes_pass_id": clothes_obj.id if clothes_obj else None,
+                "name": name,
+                "gender": None,  # 엑셀에 없음
                 "birth_date": birth_date,
                 "phone": phone,
-                "address": str(row.get("address") or "").strip() or "-",
-                "referral": "OTHER",  # 옛 SaaS엔 유입경로 없음 - 기본 OTHER
-                "payment_method": payment_method,
-                "final_price": _to_int(row.get("final_price")),
-                "start_date": start_date,
-                "end_date": end_date,
-                "motivation": "HEALTH_IMPROVEMENT",  # 옛 SaaS엔 없음 - 기본
-                "agreed_terms": True,  # 가입했다는 것 자체가 약관 동의
-                "agreed_marketing": _to_bool(row.get("agreed_marketing")),
-                "status": status,
-                "created_at": created_at,
+                "address": address,
+                "referral": referral,
+                "referral_detail": None,
+                "payment_method": None,  # 엑셀에 없음
+                "final_price": final_price,
+                "start_date": head_pass.start_date,
+                "end_date": head_pass.end_date,
+                "motivation": motivation,
+                "agreed_terms": True,  # 가입했다는 사실로 동의 간주
+                "agreed_marketing": False,  # 보수적
+                "status": hifis_status,
+                "created_at": created_at_dt,
             })
+
+    # 9. PTApplication dict 생성 (PT 보유 시)
+    if pt_passes_with_obj:
+        head_pass, head_obj = pt_passes_with_obj[0]
+        if head_obj is None:
+            warnings.append("PT 수강권 매핑 실패로 PTApplication 미생성")
+        else:
+            final_price = head_obj.cash_price
+            if locker_obj:
+                final_price += locker_obj.cash_price
+            if clothes_obj:
+                final_price += clothes_obj.cash_price
+
+            pt_rows.append({
+                "branch_id": branch.id,
+                "pt_pass_id": head_obj.id,
+                "locker_pass_id": locker_obj.id if locker_obj else None,
+                "clothes_pass_id": clothes_obj.id if clothes_obj else None,
+                "name": name,
+                "gender": None,
+                "birth_date": birth_date,
+                "phone": phone,
+                "address": address,
+                "referral": referral,
+                "referral_detail": None,
+                "payment_method": None,
+                "final_price": final_price,
+                "start_date": head_pass.start_date,
+                "end_date": head_pass.end_date,
+                "motivation": motivation,
+                "notes": None,
+                "agreed_notice": True,
+                "agreed_marketing": False,
+                "status": hifis_status,
+                "created_at": created_at_dt,
+            })
+
+    return member_rows, pt_rows, warnings
+
+
+def bulk_insert_silent(db, table_dicts: list[dict], model) -> tuple[int, list[dict]]:
+    """알림 없이 일괄 INSERT. savepoint per row.
+
+    반환: (성공 수, 실패 row 리스트)
+    """
+    success = 0
+    failed: list[dict] = []
+    for idx, data in enumerate(table_dicts):
+        try:
+            with db.begin_nested():
+                obj = model(**data)
+                db.add(obj)
+            success += 1
         except Exception as e:
             failed.append({
-                "row": idx,
-                "name": name,
+                "index": idx,
+                "name": data.get("name", "?"),
                 "error": str(e),
             })
-    return validated, failed
+    db.commit()
+    return success, failed
 
 
-def save_failed_csv(failed: list[dict], path: str = "import_failed.csv") -> None:
-    """실패 row를 CSV로 저장 - 사장님이 보고 엑셀 고치게."""
+def save_failed_csv(failed: list[dict], path: str) -> None:
     if not failed:
         return
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["row", "name", "error"])
+        writer = csv.DictWriter(f, fieldnames=["row", "name", "warnings"])
         writer.writeheader()
         writer.writerows(failed)
-    print(f"[!] 실패 {len(failed)}건 → {path}")
+    print(f"[!] 실패·경고 {len(failed)}건 → {path}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="기존 회원 데이터 일괄 import (LMS·Push 발송 0)"
+        description="기존 SaaS 회원·PT 일괄 import"
     )
-    parser.add_argument("file", help="엑셀(.xlsx) 파일 경로")
+    parser.add_argument("file", help="엑셀 파일 (.xls/.xlsx)")
+    parser.add_argument(
+        "--branch", required=True,
+        help="지점명 (Branch.name 정확히 일치, 예: 피트니스스타 화순점)",
+    )
     parser.add_argument(
         "--dry-run", action="store_true",
-        help="검증만 수행하고 INSERT 안 함 (사전 확인용)",
+        help="검증만 수행, INSERT 안 함",
+    )
+    parser.add_argument(
+        "--report", default="/tmp/import_failed.csv",
+        help="실패·경고 row 리포트 출력 경로 (기본 /tmp/import_failed.csv)",
     )
     args = parser.parse_args()
 
@@ -263,53 +476,130 @@ def main() -> None:
         print(f"ERROR: 파일 없음: {args.file}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"[1/4] 엑셀 파싱: {args.file}")
-    raw_rows = parse_excel(args.file)
-    print(f"  → {len(raw_rows)} 행 발견")
+    print(f"[1/5] 엑셀 파싱: {args.file}")
+    rows = parse_excel_html(args.file)
+    print(f"  → {len(rows)}행 발견")
 
-    print("[2/4] 지점·회원권 lookup")
+    print("[2/5] 지점·상품 lookup")
     db = SessionLocal()
     try:
-        branches = {b.name: b for b in db.query(Branch).all()}
-        passes_by_branch: dict = {}
-        for p in db.query(MembershipPass).all():
-            passes_by_branch.setdefault(p.branch_id, {})[p.name] = p
-        print(f"  → 지점 {len(branches)}개, 회원권 총 "
-              f"{sum(len(v) for v in passes_by_branch.values())}개")
+        branch = db.query(Branch).filter(Branch.name == args.branch).first()
+        if branch is None:
+            print(f"ERROR: 지점 없음: {args.branch!r}", file=sys.stderr)
+            print(f"  HiFIS DB 등록 지점: "
+                  f"{[b.name for b in db.query(Branch).all()]}", file=sys.stderr)
+            sys.exit(1)
 
-        print("[3/4] 검증·매핑")
-        validated, parse_failed = validate_and_map(
-            raw_rows, branches, passes_by_branch,
-        )
-        print(f"  → 검증 OK: {len(validated)}, 실패: {len(parse_failed)}")
+        # 정규화된 이름을 키로 (공백 차이 무시 — 사장님 등록명 vs 엑셀명)
+        memberships = {
+            (p.branch_id, _normalize(p.name)): p
+            for p in db.query(MembershipPass).filter(
+                MembershipPass.branch_id == branch.id
+            ).all()
+        }
+        pt_passes = {
+            (p.branch_id, _normalize(p.name)): p
+            for p in db.query(PTPass).filter(PTPass.branch_id == branch.id).all()
+        }
+        lockers = {
+            (p.branch_id, _normalize(p.name)): p
+            for p in db.query(LockerPass).filter(
+                LockerPass.branch_id == branch.id
+            ).all()
+        }
+        clothes = {
+            (p.branch_id, _normalize(p.name)): p
+            for p in db.query(ClothesPass).filter(
+                ClothesPass.branch_id == branch.id
+            ).all()
+        }
+        print(f"  → 회원권 {len(memberships)}개, PT {len(pt_passes)}개, "
+              f"락커 {len(lockers)}개, 운동복 {len(clothes)}개")
 
-        if parse_failed:
-            print("  실패 샘플 (앞 5건):")
-            for f in parse_failed[:5]:
-                print(f"    row {f['row']}: {f['name']} - {f['error']}")
+        print("[3/5] 행별 매핑·검증")
+        all_member_rows: list[dict] = []
+        all_pt_rows: list[dict] = []
+        failed: list[dict] = []
+        unmapped_passes: set[str] = set()  # 매핑 안 된 회원권 이름 집계
+
+        for idx, row in enumerate(rows):
+            try:
+                m_rows, p_rows, ws = build_row_data(
+                    row, branch, memberships, pt_passes, lockers, clothes,
+                )
+                all_member_rows.extend(m_rows)
+                all_pt_rows.extend(p_rows)
+
+                # 미매핑 회원권명 집계
+                for w in ws:
+                    if "미매핑 이용권" in w:
+                        for n in re.findall(r"'([^']+)'", w):
+                            unmapped_passes.add(n)
+
+                # 제외·실패 row 기록
+                if not m_rows and not p_rows:
+                    failed.append({
+                        "row": idx + 2,
+                        "name": str(row.get("이름") or "?"),
+                        "warnings": "; ".join(ws),
+                    })
+            except Exception as e:
+                failed.append({
+                    "row": idx + 2,
+                    "name": str(row.get("이름") or "?"),
+                    "warnings": f"예외: {e}",
+                })
+
+        print(f"  → Member 검증 OK: {len(all_member_rows)}")
+        print(f"  → PTApplication 검증 OK: {len(all_pt_rows)}")
+        print(f"  → 제외·실패: {len(failed)}")
+
+        if unmapped_passes:
+            print()
+            print(f"[!] 매핑 안 된 회원권명 {len(unmapped_passes)}종 — "
+                  f"HiFIS 어드민에 등록 필요:")
+            for n in sorted(unmapped_passes):
+                kind = "PT" if is_pt_pass(n) else "Member"
+                print(f"  [{kind}] {n!r}")
 
         if args.dry_run:
             print()
-            print("DRY-RUN 종료 - DB 변경 없음")
-            save_failed_csv(parse_failed)
+            print("DRY-RUN 종료 — DB 변경 없음")
+            save_failed_csv(failed, args.report)
             return
 
-        print(f"[4/4] INSERT 시작 ({len(validated)}건)")
-        success, insert_failed = bulk_import_members_silent(db, validated)
+        if unmapped_passes:
+            print()
+            print("⚠️  매핑 안 된 회원권이 있어 일부 row가 제외됩니다.")
+            print("    어드민에 회원권 등록 후 다시 실행하세요.")
+
+        print()
+        print(f"[4/5] Member INSERT ({len(all_member_rows)}건)")
+        m_success, m_failed = bulk_insert_silent(db, all_member_rows, Member)
+        print(f"  → 성공: {m_success}, 실패: {len(m_failed)}")
+
+        print(f"[5/5] PTApplication INSERT ({len(all_pt_rows)}건)")
+        p_success, p_failed = bulk_insert_silent(db, all_pt_rows, PTApplication)
+        print(f"  → 성공: {p_success}, 실패: {len(p_failed)}")
+
         print()
         print("=" * 60)
-        print(f"✅ 성공: {success}")
-        print(f"❌ 실패: {len(parse_failed) + len(insert_failed)} "
-              f"(파싱: {len(parse_failed)}, INSERT: {len(insert_failed)})")
+        print(f"✅ Member 성공: {m_success}")
+        print(f"✅ PTApplication 성공: {p_success}")
+        print(f"❌ 제외·실패: {len(failed) + len(m_failed) + len(p_failed)}")
         print("=" * 60)
 
-        save_failed_csv(parse_failed + insert_failed)
+        all_failed_for_csv = (
+            failed
+            + [{"row": "?", "name": f["name"], "warnings": f["error"]}
+               for f in m_failed + p_failed]
+        )
+        save_failed_csv(all_failed_for_csv, args.report)
 
-        if success > 0:
+        if m_success or p_success:
             print()
             print("→ 알림 발송 0건 (silent import)")
-            print("→ created_at은 원본 가입일이라 D+N 트리거 옛 회원에겐 자동 미발송")
-            print("→ 만기 다가오는 회원은 EXPIRY_SOON 트리거 자연 수신 시작")
+            print("→ created_at은 '최근 구매일' 기준 → D+N 트리거 자연 처리")
     finally:
         db.close()
 

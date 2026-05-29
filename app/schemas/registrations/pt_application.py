@@ -135,14 +135,14 @@ class PTApplicationResponse(BaseModel):
     locker_pass_id: UUID | None
     clothes_pass_id: UUID | None
     name: str
-    gender: Gender
-    birth_date: date
+    gender: Gender | None  # 마이그 회원은 NULL 가능
+    birth_date: date | None  # 마이그 회원은 NULL 가능
     phone: str
     address: str
     referral: Referral
     referral_detail: str | None
-    payment_method: PaymentMethod
-    final_price: int
+    payment_method: PaymentMethod | None  # 마이그 회원은 NULL 가능
+    final_price: int | None
     start_date: date
     end_date: date
     motivation: Motivation | None

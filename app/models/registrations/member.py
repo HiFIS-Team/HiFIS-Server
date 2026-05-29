@@ -41,23 +41,24 @@ class Member(Base):
 
     # 개인 정보
     name: Mapped[str] = mapped_column(String(50), nullable=False)
-    gender: Mapped[str] = mapped_column(String(1), nullable=False)
-    birth_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # 성별·생년월일·결제정보·운동목적은 마이그 회원 데이터에 없을 수 있어 nullable (사장님이 사후 입력)
+    gender: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     address: Mapped[str] = mapped_column(String(255), nullable=False)
     referral: Mapped[str] = mapped_column(String(20), nullable=False)
     referral_detail: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # 결제 정보
-    payment_method: Mapped[str] = mapped_column(String(20), nullable=False)
-    final_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    final_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # 등록 기간
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     # 부가 옵션
-    motivation: Mapped[str] = mapped_column(String(20), nullable=False)
+    motivation: Mapped[str | None] = mapped_column(String(20), nullable=True)
     agreed_terms: Mapped[bool] = mapped_column(Boolean, nullable=False)
     # 마케팅 정보 수신 동의 - EXPIRED_FOLLOWUP 등 마케팅성 트리거 발송 필터용
     agreed_marketing: Mapped[bool] = mapped_column(

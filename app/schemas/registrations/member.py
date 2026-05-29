@@ -131,19 +131,19 @@ class MemberResponse(BaseModel):
     branch_id: UUID
     membership_pass_id: UUID
     name: str
-    gender: Gender
-    birth_date: date
+    gender: Gender | None  # 마이그 회원은 NULL 가능
+    birth_date: date | None  # 마이그 회원은 NULL 가능
     phone: str
     address: str
     referral: Referral
     referral_detail: str | None
-    payment_method: PaymentMethod
-    final_price: int
+    payment_method: PaymentMethod | None  # 마이그 회원은 NULL 가능
+    final_price: int | None
     start_date: date
     end_date: date
     locker_pass_id: UUID | None
     clothes_pass_id: UUID | None
-    motivation: Motivation
+    motivation: Motivation | None  # 마이그 회원은 NULL 가능
     agreed_marketing: bool
     status: MemberStatus
     created_at: datetime
