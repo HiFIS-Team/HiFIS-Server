@@ -126,11 +126,13 @@ def _member_summary(
         .group_by(Member.gender)
         .all()
     )
-    by_gender = {g: c for g, c in gender_rows}
+    # 마이그 회원은 성별 NULL 가능 → "UNKNOWN" 버킷으로
+    by_gender = {(g or "UNKNOWN"): c for g, c in gender_rows}
 
-    # 7. by_age_range (Postgres age() 사용)
+    # 7. by_age_range (Postgres age() 사용, birth_date NULL은 UNKNOWN 버킷)
     age_expr = func.extract("year", func.age(Member.birth_date))
     range_expr = case(
+        (Member.birth_date.is_(None), "UNKNOWN"),
         (age_expr < 20, "10s"),
         (age_expr < 30, "20s"),
         (age_expr < 40, "30s"),
