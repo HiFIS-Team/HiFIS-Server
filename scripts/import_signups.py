@@ -235,9 +235,14 @@ def build_member_row(d: dict, branch, memberships, lockers, clothes, today, warn
         warnings.append(f"{d['name']}: 회원권 '{d['pass_name']}' 미매핑 → 제외")
         return None
 
-    # 락커·운동복
+    # 락커·운동복 - 회원권이 무료제공이면 매핑 스킵 (locker_pass_id=NULL)
     locker_obj = None
-    if d.get("locker_name") and d["locker_name"].upper() != "X":
+    if pass_obj.provides_locker:
+        if d.get("locker_name") and d["locker_name"].upper() != "X":
+            warnings.append(
+                f"{d['name']}: 회원권 '{pass_obj.name}'에 락커 포함 → 락커 매핑 스킵"
+            )
+    elif d.get("locker_name") and d["locker_name"].upper() != "X":
         # 새 양식은 "3개월"처럼 기간만 → DB의 "락커 3개월" 같은 형태로 lookup
         for candidate in [d["locker_name"], f"락커 {d['locker_name']}"]:
             locker_obj = lockers.get((branch.id, _normalize_pass(candidate)))
@@ -247,7 +252,12 @@ def build_member_row(d: dict, branch, memberships, lockers, clothes, today, warn
             warnings.append(f"{d['name']}: 락커 '{d['locker_name']}' 미매핑 (NULL로 박음)")
 
     clothes_obj = None
-    if d.get("clothes_name") and d["clothes_name"].upper() != "X":
+    if pass_obj.provides_clothes:
+        if d.get("clothes_name") and d["clothes_name"].upper() != "X":
+            warnings.append(
+                f"{d['name']}: 회원권 '{pass_obj.name}'에 운동복 포함 → 운동복 매핑 스킵"
+            )
+    elif d.get("clothes_name") and d["clothes_name"].upper() != "X":
         for candidate in [d["clothes_name"], f"운동복 {d['clothes_name']}"]:
             clothes_obj = clothes.get((branch.id, _normalize_pass(candidate)))
             if clothes_obj:

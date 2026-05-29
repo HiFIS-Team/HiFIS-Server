@@ -352,17 +352,29 @@ def build_row_data(
             # 회원권 매핑 안 됨 → Member도 못 만듦 (membership_pass_id 필수)
             warnings.append("회원권 매핑 실패로 Member 미생성")
         else:
+            # 회원권이 락커·운동복을 무료제공하면 별도 매핑·가격 합산 차단
+            m_eff_locker = None if head_obj.provides_locker else locker_obj
+            m_eff_clothes = None if head_obj.provides_clothes else clothes_obj
+            if head_obj.provides_locker and locker_obj is not None:
+                warnings.append(
+                    f"회원권 '{head_obj.name}'에 락커 포함 → 락커 매핑 스킵 (가격 미합산)"
+                )
+            if head_obj.provides_clothes and clothes_obj is not None:
+                warnings.append(
+                    f"회원권 '{head_obj.name}'에 운동복 포함 → 운동복 매핑 스킵 (가격 미합산)"
+                )
+
             final_price = head_obj.cash_price
-            if locker_obj:
-                final_price += locker_obj.cash_price
-            if clothes_obj:
-                final_price += clothes_obj.cash_price
+            if m_eff_locker:
+                final_price += m_eff_locker.cash_price
+            if m_eff_clothes:
+                final_price += m_eff_clothes.cash_price
 
             member_rows.append({
                 "branch_id": branch.id,
                 "membership_pass_id": head_obj.id,
-                "locker_pass_id": locker_obj.id if locker_obj else None,
-                "clothes_pass_id": clothes_obj.id if clothes_obj else None,
+                "locker_pass_id": m_eff_locker.id if m_eff_locker else None,
+                "clothes_pass_id": m_eff_clothes.id if m_eff_clothes else None,
                 "name": name,
                 "gender": None,  # 엑셀에 없음
                 "birth_date": birth_date,
@@ -387,17 +399,29 @@ def build_row_data(
         if head_obj is None:
             warnings.append("PT 수강권 매핑 실패로 PTApplication 미생성")
         else:
+            # 수강권이 락커·운동복을 무료제공하면 별도 매핑·가격 합산 차단
+            p_eff_locker = None if head_obj.provides_locker else locker_obj
+            p_eff_clothes = None if head_obj.provides_clothes else clothes_obj
+            if head_obj.provides_locker and locker_obj is not None:
+                warnings.append(
+                    f"수강권 '{head_obj.name}'에 락커 포함 → 락커 매핑 스킵 (가격 미합산)"
+                )
+            if head_obj.provides_clothes and clothes_obj is not None:
+                warnings.append(
+                    f"수강권 '{head_obj.name}'에 운동복 포함 → 운동복 매핑 스킵 (가격 미합산)"
+                )
+
             final_price = head_obj.cash_price
-            if locker_obj:
-                final_price += locker_obj.cash_price
-            if clothes_obj:
-                final_price += clothes_obj.cash_price
+            if p_eff_locker:
+                final_price += p_eff_locker.cash_price
+            if p_eff_clothes:
+                final_price += p_eff_clothes.cash_price
 
             pt_rows.append({
                 "branch_id": branch.id,
                 "pt_pass_id": head_obj.id,
-                "locker_pass_id": locker_obj.id if locker_obj else None,
-                "clothes_pass_id": clothes_obj.id if clothes_obj else None,
+                "locker_pass_id": p_eff_locker.id if p_eff_locker else None,
+                "clothes_pass_id": p_eff_clothes.id if p_eff_clothes else None,
                 "name": name,
                 "gender": None,
                 "birth_date": birth_date,
