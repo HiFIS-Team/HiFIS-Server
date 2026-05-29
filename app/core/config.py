@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # 트래픽 샘플링 - 0.0~1.0. 작은 사장님 사업이라 0.0(에러만)으로 충분
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0
 
+    # 알림톡(Solapi LMS) 발송 활성화 - 운영 전엔 false로 두고 회원 발송 차단.
+    # false일 때 send_sms는 호출 즉시 (True, None) 반환 + 로그만 남김 (Solapi 호출 X).
+    # 이력(Message 테이블)은 SUCCESS로 저장돼 화면에 발송된 것처럼 보이지만 실 발송 0.
+    MESSAGING_ENABLED: bool = True
+
     CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = []
 
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")

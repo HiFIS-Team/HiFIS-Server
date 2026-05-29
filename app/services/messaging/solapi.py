@@ -24,6 +24,14 @@ def send_sms(
     NOTE: 전달하는 번호는 Solapi 콘솔에서 발신번호 등록 + 인증이 끝난 번호여야 한다.
     등록 안 된 번호면 발송 자체가 에러로 떨어진다.
     """
+    # 알림톡 발송 비활성 (운영 전 안전망) - Solapi 호출 안 함, 성공 처리만
+    if not settings.MESSAGING_ENABLED:
+        logger.info(
+            "[DISABLED] SMS 발송 차단: to=%s, sender=%s",
+            mask_phone(recipient), sender or settings.SOLAPI_SENDER,
+        )
+        return True, None
+
     from_number = sender or settings.SOLAPI_SENDER
     client = SolapiMessageService(
         api_key=settings.SOLAPI_API_KEY,
