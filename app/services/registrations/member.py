@@ -16,6 +16,7 @@ from app.models.admin.admin import Admin
 from app.models.registrations.member import Member
 from app.schemas.registrations.member import MemberCreate, MemberStatusUpdate, MemberUpdate, MemberStatus
 from app.services.passes._validators import (
+    assert_no_free_provided_conflict,
     ensure_clothes_pass_match,
     ensure_locker_pass_match,
     ensure_membership_pass_match,
@@ -32,7 +33,13 @@ def create_member(
 ) -> Member:
     """회원가입 신청서 생성 - 지점/회원권 검증 → 저장 → 회원 LMS → 어드민 알림"""
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
-    ensure_membership_pass_match(db, data.membership_pass_id, data.branch_id)
+    membership_pass = ensure_membership_pass_match(
+        db, data.membership_pass_id, data.branch_id,
+    )
+    # 락커·운동복 무료제공 회원권은 별도 락커·운동복 선택 차단
+    assert_no_free_provided_conflict(
+        membership_pass, data.locker_pass_id, data.clothes_pass_id,
+    )
 
     if data.locker_pass_id is not None:
         ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
@@ -171,11 +178,29 @@ def update_member(
     """회원 정보 수정 (Admin, 부분 수정)"""
     member = get_member(db, member_id, current_admin)
 
+    # 수정 후 effective 회원권 - PATCH 본문 우선, 없으면 현재 값
     if data.membership_pass_id is not None:
-        ensure_membership_pass_match(
-            db, data.membership_pass_id, member.branch_id
+        membership_pass = ensure_membership_pass_match(
+            db, data.membership_pass_id, member.branch_id,
         )
         member.membership_pass_id = data.membership_pass_id
+    else:
+        membership_pass = ensure_membership_pass_match(
+            db, member.membership_pass_id, member.branch_id,
+        )
+
+    # 무료제공 충돌 검사 - 변경 후의 effective 락커·운동복 vs 회원권 provides_*
+    effective_locker_id = (
+        data.locker_pass_id if data.locker_pass_id is not None
+        else member.locker_pass_id
+    )
+    effective_clothes_id = (
+        data.clothes_pass_id if data.clothes_pass_id is not None
+        else member.clothes_pass_id
+    )
+    assert_no_free_provided_conflict(
+        membership_pass, effective_locker_id, effective_clothes_id,
+    )
 
     if data.name is not None:
         member.name = data.name
