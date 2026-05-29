@@ -20,7 +20,11 @@ class EmailVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=6, description="6자리 인증번호")
 
 class AdminResponse(BaseModel):
-    """관리자 응답 (password_hash 제외)"""
+    """관리자 응답 (password_hash 제외).
+
+    last_seen_at·is_online은 SUPER_ADMIN이 보는 목록(/admin/admins) 등에서 활용.
+    본인 정보(/admin/me)에도 함께 노출 (본인은 항상 is_online=True).
+    """
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -31,6 +35,8 @@ class AdminResponse(BaseModel):
     status: AdminStatus
     branch_id: UUID | None
     created_at: datetime
+    last_seen_at: datetime | None = None
+    is_online: bool = False
 
 class LoginRequest(BaseModel):
     email: EmailStr

@@ -168,3 +168,15 @@ def change_password(
 ):
     """비밀번호 변경"""
     admin_service.change_password(db, current, payload)
+
+
+@me_router.post("/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
+def heartbeat(
+    db: Session = Depends(get_db),
+    current: Admin = Depends(get_current_admin),
+):
+    """접속 신호 - 프론트가 60초마다 호출, last_seen_at 갱신.
+
+    SUPER_ADMIN이 /admin/admins 조회 시 is_online 표시에 사용.
+    """
+    admin_service.record_heartbeat(db, current)

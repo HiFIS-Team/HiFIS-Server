@@ -343,6 +343,9 @@ def login(db: Session, data: LoginRequest) -> TokenResponse:
 
     token = create_access_token(subject=str(admin.id))
     refresh = create_refresh_token(subject=str(admin.id))
+    # 로그인 시점에 last_seen_at 갱신 - 별도 heartbeat 오기 전부터 "접속중"으로 표시
+    admin.last_seen_at = datetime.now(KST)
+    db.commit()
     logger.info("관리자 로그인: admin_id=%s, email=%s", admin.id, admin.email)
     return TokenResponse(access_token=token, refresh_token=refresh, admin=admin)
 
@@ -427,4 +430,14 @@ def change_password(
     current_admin.password_hash = hash_password(data.new_password)
     db.commit()
     logger.info("관리자 비밀번호 변경: admin_id=%s", current_admin.id)
+
+
+def record_heartbeat(db: Session, current_admin: Admin) -> None:
+    """heartbeat - 현재 시각으로 last_seen_at 갱신.
+
+    프론트가 60초마다 호출 → SUPER_ADMIN 목록의 is_online 갱신.
+    1쿼리 1커밋이라 가벼움 (관리자 수가 적어 부하 무시 가능).
+    """
+    current_admin.last_seen_at = datetime.now(KST)
+    db.commit()
 
