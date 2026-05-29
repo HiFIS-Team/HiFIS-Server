@@ -21,6 +21,7 @@ def create_clothes_pass(db: Session, data: ClothesPassCreate, current_admin: Adm
         cash_price=data.cash_price,
         card_price=data.card_price,
         duration_months=data.duration_months,
+        provides_locker=data.provides_locker,
     )
     db.add(pass_obj)
     db.commit()
@@ -66,6 +67,8 @@ def update_clothes_pass(
         pass_obj.card_price = data.card_price
     if data.duration_months is not None:
         pass_obj.duration_months = data.duration_months
+    if data.provides_locker is not None:
+        pass_obj.provides_locker = data.provides_locker
     db.commit()
     db.refresh(pass_obj)
     return pass_obj

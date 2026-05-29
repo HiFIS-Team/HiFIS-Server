@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +26,10 @@ class LockerPass(Base):
     card_price: Mapped[int] = mapped_column(Integer, nullable=False)
     # 이용 기간 (개월). 1·3·6·12 등. 예외 케이스는 NULL
     duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 이 락커 상품이 운동복도 무료 제공하면 True (예: "락커 6개월 + 운동복 무료")
+    provides_clothes: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

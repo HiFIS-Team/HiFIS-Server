@@ -13,6 +13,10 @@ class LockerPassCreate(BaseModel):
         default=None, ge=1, le=120,
         description="이용 기간 (개월). 1·3·6·12 등",
     )
+    provides_clothes: bool = Field(
+        default=False,
+        description="운동복 무료 제공 - 예: '락커 6개월 + 운동복 무료'",
+    )
 
 class LockerPassUpdate(BaseModel):
     """락커 상품 수정 요청 (부분 수정, branch_id 변경 불가)"""
@@ -20,6 +24,7 @@ class LockerPassUpdate(BaseModel):
     cash_price: int | None = Field(default=None, ge=0)
     card_price: int | None = Field(default=None, ge=0)
     duration_months: int | None = Field(default=None, ge=1, le=120)
+    provides_clothes: bool | None = None
 
 class LockerPassResponse(BaseModel):
     """락커 상품 응답"""
@@ -31,4 +36,5 @@ class LockerPassResponse(BaseModel):
     cash_price: int
     card_price: int
     duration_months: int | None
+    provides_clothes: bool
     created_at: datetime
