@@ -51,6 +51,7 @@ class TriggerType(str, Enum):
     # 실시간 발송 (API 직후)
     RESERVATION_CONFIRM = "RESERVATION_CONFIRM" # 예약 등록 직후
     REGISTERED = "REGISTERED" # 회원/PT 신청서 제출 직후
+    RE_REGISTERED = "RE_REGISTERED" # 회원 재등록 직후 (안부 톤)
     HOLD = "HOLD" # 홀딩 신청 직후 (사유 기반 AI 본문)
     HOLD_CANCEL = "HOLD_CANCEL" # 홀딩 취소 시 (AI 본문)
 
@@ -180,7 +181,14 @@ PERSONAL_TRIGGERS: set[TriggerType] = {
     TriggerType.EXPIRY_SOON_2,
     TriggerType.EXPIRED_TODAY,
     TriggerType.EXPIRED_FOLLOWUP,
+    TriggerType.RE_REGISTERED,
 }
+
+
+class MemberCategory(str, Enum):
+    """회원 구분 - 신청 진입 경로에 따라 자동 분류"""
+    NEW = "NEW"            # 신규 가입 (POST /members)
+    EXISTING = "EXISTING"  # 재등록 (POST /members/re-register)
 
 # === 옵션 응답 헬퍼 ===
 

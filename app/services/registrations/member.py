@@ -14,7 +14,13 @@ from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.models.registrations.member import Member
-from app.schemas.registrations.member import MemberCreate, MemberStatusUpdate, MemberUpdate, MemberStatus
+from app.schemas.registrations.member import (
+    MemberCreate,
+    MemberReRegister,
+    MemberStatusUpdate,
+    MemberUpdate,
+    MemberStatus,
+)
 from app.services.passes._validators import (
     assert_no_free_provided_conflict,
     ensure_clothes_pass_match,
@@ -259,6 +265,114 @@ def delete_member(db: Session, member_id: UUID, current_admin: Admin) -> None:
     db.delete(member)
     db.commit()
     logger.info("회원 삭제 완료: member_id=%s", member_id)
+
+
+def re_register_member(
+    db: Session,
+    data: MemberReRegister,
+    background_tasks: BackgroundTasks | None = None,
+) -> Member:
+    """재등록 - 기존 회원 행 UPDATE + final_price 누적 + 알림톡 RE_REGISTERED
+
+    식별: branch_id + name + phone (셋 다 일치)
+    - 0건: 404 "재등록할 회원 정보를 찾을 수 없습니다"
+    - 2건+: 400 "동일 정보 회원 다건 - 어드민 확인 필요"
+    - 1건: 옛 행 UPDATE
+    """
+    branch = get_branch(db, data.branch_id)
+    # 새 회원권 검증 + 무료제공 충돌 체크 (provides_locker/provides_clothes)
+    new_pass = ensure_membership_pass_match(
+        db, data.membership_pass_id, data.branch_id,
+    )
+    assert_no_free_provided_conflict(
+        new_pass, data.locker_pass_id, data.clothes_pass_id,
+    )
+    if data.locker_pass_id is not None:
+        ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+    if data.clothes_pass_id is not None:
+        ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+
+    # 식별 - branch_id + name + phone
+    matches = (
+        db.query(Member)
+        .filter(
+            Member.branch_id == data.branch_id,
+            Member.name == data.name,
+            Member.phone == data.phone,
+        )
+        .all()
+    )
+    if len(matches) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="재등록할 회원 정보를 찾을 수 없습니다. 이름·전화번호를 확인해 주세요.",
+        )
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="동일 정보 회원이 여러 건 있습니다. 어드민에 문의해 주세요.",
+        )
+    member = matches[0]
+
+    # UPDATE - 새 회원권/락커/운동복/결제수단/기간으로 갱신
+    member.membership_pass_id = data.membership_pass_id
+    member.locker_pass_id = data.locker_pass_id
+    member.clothes_pass_id = data.clothes_pass_id
+    member.payment_method = data.payment_method.value
+    # final_price 누적 - 기존 값 + 이번 결제 (None이면 0으로 시작)
+    member.final_price = (member.final_price or 0) + data.final_price
+    member.start_date = data.start_date
+    member.end_date = data.end_date
+    # status 재활성화 (EXPIRED/HELD였든 무관, 재등록은 활성으로)
+    member.status = MemberStatus.REGISTERED.value
+    member.category = "EXISTING"
+    if data.agreed_marketing is not None:
+        member.agreed_marketing = data.agreed_marketing
+
+    db.commit()
+    db.refresh(member)
+
+    logger.info(
+        "회원 재등록 완료: member_id=%s, branch_id=%s, name=%s, phone=%s, "
+        "누적 final_price=%s",
+        member.id, data.branch_id, data.name, mask_phone(data.phone),
+        member.final_price,
+    )
+
+    # RE_REGISTERED 알림톡 (안부 톤)
+    try:
+        message_service.send_message(db, MessageSendRequest(
+            branch_id=data.branch_id,
+            source_type=MessageSourceType.MEMBER,
+            source_id=member.id,
+            trigger_type=TriggerType.RE_REGISTERED,
+            recipient=data.phone,
+            name=data.name,
+        ))
+    except Exception as e:
+        logger.error(
+            "회원 재등록 알림 발송 실패: member_id=%s, error=%s",
+            member.id, str(e),
+        )
+
+    # 어드민 알림 fan-out (DB + Web Push)
+    try:
+        notification_service.notify_branch_event(
+            db,
+            branch_id=data.branch_id,
+            source_type=NotificationSourceType.MEMBER,
+            source_id=member.id,
+            title=f"재등록 - {branch.name}",
+            body=f"{data.name}님이 재등록했습니다.",
+            background_tasks=background_tasks,
+        )
+    except Exception as e:
+        logger.error(
+            "회원 재등록 어드민 알림 fan-out 실패: member_id=%s, error=%s",
+            member.id, str(e),
+        )
+
+    return member
 
 
 def bulk_import_members_silent(

@@ -9,7 +9,12 @@ from app.core.rate_limit import limiter
 from app.models.admin.admin import Admin
 from app.db.deps import get_db
 from app.schemas.common import Page
-from app.schemas.registrations.member import MemberCreate, MemberResponse, MemberUpdate
+from app.schemas.registrations.member import (
+    MemberCreate,
+    MemberReRegister,
+    MemberResponse,
+    MemberUpdate,
+)
 from app.schemas.enums import MemberStatus
 from app.services.registrations import member as member_service
 
@@ -26,6 +31,22 @@ def create_member(
 ):
     """회원가입 신청 (Public). 어드민 알림은 BackgroundTasks로 응답 후 발송."""
     return member_service.create_member(db, payload, background_tasks)
+
+
+@public_router.post("/re-register", response_model=MemberResponse)
+@limiter.limit("30/minute")
+def re_register_member(
+    request: Request,
+    payload: MemberReRegister,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """재등록 신청 (Public) - 기존 회원의 회원권 갱신 + final_price 누적.
+
+    식별: branch_id + name + phone 일치. 없으면 404, 둘 이상이면 400.
+    옛 행 UPDATE 후 RE_REGISTERED 알림톡 발송.
+    """
+    return member_service.re_register_member(db, payload, background_tasks)
 
 # Admin - 인증 의존성은 인증 도입 후 부착
 admin_router = APIRouter(prefix="/admin/members", tags=["admin-members"])

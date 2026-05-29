@@ -71,6 +71,14 @@ class Member(Base):
         nullable=False,
         default="REGISTERED",
     )
+    # 구분 - NEW(신규) / EXISTING(재등록)
+    # 신규 가입 시 NEW로 INSERT, 재등록 endpoint(/members/re-register)가 EXISTING으로 UPDATE
+    category: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="NEW",
+        default="NEW",
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

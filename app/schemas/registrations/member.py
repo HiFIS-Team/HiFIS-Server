@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.schemas.enums import (
     Gender,
+    MemberCategory,
     MemberStatus,
     Motivation,
     PaymentMethod,
@@ -123,6 +124,48 @@ class MemberStatusUpdate(BaseModel):
     """회원 상태 변경 (Internal, 스케줄러 전용)"""
     status: MemberStatus
 
+
+class MemberReRegister(BaseModel):
+    """재등록 신청 (Public) - 기존 회원의 회원권 갱신 + 결제금액 누적
+
+    동작:
+    - phone + name + branch_id 일치 회원 검색 (없으면 404, 둘 이상이면 400)
+    - 옛 행 UPDATE: 회원권·락커·운동복·결제수단 갱신, status=REGISTERED 재활성화
+    - final_price 누적: 옛 값 + 이번 결제
+    - start_date / end_date 새로 카운트
+    - category = EXISTING으로 변경
+    - RE_REGISTERED 알림톡 발송 (안부 톤)
+    - 옛 개인정보(주소·생일·성별·motivation 등)는 그대로 유지
+    """
+    branch_id: UUID
+    name: str = Field(..., min_length=1, max_length=50)
+    phone: str = Field(..., min_length=9, max_length=20)
+
+    # 이번에 결제한 회원권 + 락커/운동복
+    membership_pass_id: UUID
+    locker_pass_id: UUID | None = None
+    clothes_pass_id: UUID | None = None
+    payment_method: PaymentMethod
+    final_price: int = Field(..., ge=0, description="이번 결제 금액 (옛 final_price에 누적됨)")
+    start_date: date
+    end_date: date
+
+    # 마케팅 동의 - None이면 옛 값 그대로 유지, 명시되면 갱신
+    agreed_marketing: bool | None = None
+
+    @field_validator("phone")
+    @classmethod
+    def _validate_phone(cls, v: str) -> str:
+        if not is_valid_phone(v):
+            raise ValueError("전화번호 형식이 올바르지 않습니다.")
+        return normalize_phone(v)
+
+    @model_validator(mode="after")
+    def _check_period(self):
+        if self.end_date < self.start_date:
+            raise ValueError("종료일은 시작일보다 빠를 수 없습니다.")
+        return self
+
 class MemberResponse(BaseModel):
     """회원 응답"""
     model_config = ConfigDict(from_attributes=True)
@@ -146,4 +189,5 @@ class MemberResponse(BaseModel):
     motivation: Motivation | None  # 마이그 회원은 NULL 가능
     agreed_marketing: bool
     status: MemberStatus
+    category: MemberCategory  # NEW(신규) / EXISTING(재등록)
     created_at: datetime
