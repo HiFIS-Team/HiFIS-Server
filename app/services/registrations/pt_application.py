@@ -62,6 +62,8 @@ def create_pt_application(
         referral_detail=(data.referral_detail or "").strip() or None,
         payment_method=data.payment_method.value,
         final_price=data.final_price,
+        # 신규 PT 신청은 이번 결제 = 누적 동일
+        total_paid=data.final_price,
         start_date=data.start_date,
         end_date=data.end_date,
         motivation=data.motivation.value if data.motivation else None,
@@ -311,7 +313,9 @@ def re_register_pt_application(
     application.locker_pass_id = data.locker_pass_id
     application.clothes_pass_id = data.clothes_pass_id
     application.payment_method = data.payment_method.value
-    application.final_price = (application.final_price or 0) + data.final_price
+    # 이번 결제는 final_price 덮어쓰기, 누적은 total_paid에 합산
+    application.final_price = data.final_price
+    application.total_paid = (application.total_paid or 0) + data.final_price
     application.start_date = data.start_date
     application.end_date = data.end_date
     application.status = MemberStatus.REGISTERED.value
@@ -324,9 +328,9 @@ def re_register_pt_application(
 
     logger.info(
         "PT 재등록 완료: application_id=%s, branch_id=%s, name=%s, phone=%s, "
-        "누적 final_price=%s",
+        "이번 결제=%s, 누적 결제=%s",
         application.id, data.branch_id, data.name, mask_phone(data.phone),
-        application.final_price,
+        application.final_price, application.total_paid,
     )
 
     try:

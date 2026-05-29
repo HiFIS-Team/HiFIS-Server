@@ -375,6 +375,7 @@ def build_row_data(
                 "membership_pass_id": head_obj.id,
                 "locker_pass_id": m_eff_locker.id if m_eff_locker else None,
                 "clothes_pass_id": m_eff_clothes.id if m_eff_clothes else None,
+                "total_paid": final_price,  # 마이그는 첫 결제 = 누적
                 "name": name,
                 "gender": None,  # 엑셀에 없음
                 "birth_date": birth_date,
@@ -422,6 +423,7 @@ def build_row_data(
                 "pt_pass_id": head_obj.id,
                 "locker_pass_id": p_eff_locker.id if p_eff_locker else None,
                 "clothes_pass_id": p_eff_clothes.id if p_eff_clothes else None,
+                "total_paid": final_price,  # 마이그는 첫 결제 = 누적
                 "name": name,
                 "gender": None,
                 "birth_date": birth_date,

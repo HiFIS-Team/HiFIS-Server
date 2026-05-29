@@ -60,7 +60,10 @@ class PTApplication(Base):
 
     # 결제 정보
     payment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # final_price : 이번 결제 금액 (재등록 시 새 값으로 덮어씀)
     final_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # total_paid : 지금까지 누적 결제 금액
+    total_paid: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # 등록 기간
     start_date: Mapped[date] = mapped_column(Date, nullable=False)

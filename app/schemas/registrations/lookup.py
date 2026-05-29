@@ -26,7 +26,8 @@ class MemberLookup(BaseModel):
     locker_pass_id: UUID | None
     clothes_pass_id: UUID | None
     payment_method: PaymentMethod | None
-    final_price: int | None
+    final_price: int | None  # 이번 결제 금액
+    total_paid: int | None   # 지금까지 누적 결제 금액
     start_date: date
     end_date: date
     status: MemberStatus  # REGISTERED / HELD / EXPIRED
@@ -42,7 +43,8 @@ class PTLookup(BaseModel):
     locker_pass_id: UUID | None
     clothes_pass_id: UUID | None
     payment_method: PaymentMethod | None
-    final_price: int | None
+    final_price: int | None  # 이번 결제 금액
+    total_paid: int | None   # 지금까지 누적 결제 금액
     start_date: date
     end_date: date
     status: MemberStatus

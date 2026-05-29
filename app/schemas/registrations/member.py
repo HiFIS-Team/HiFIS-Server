@@ -181,7 +181,8 @@ class MemberResponse(BaseModel):
     referral: Referral
     referral_detail: str | None
     payment_method: PaymentMethod | None  # 마이그 회원은 NULL 가능
-    final_price: int | None
+    final_price: int | None  # 이번 결제 금액 (재등록 시 새 값으로 덮어씀)
+    total_paid: int | None   # 지금까지 누적 결제 금액 (신규=final_price와 동일, 재등록 시 += 이번 결제)
     start_date: date
     end_date: date
     locker_pass_id: UUID | None

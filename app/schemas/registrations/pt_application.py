@@ -182,7 +182,8 @@ class PTApplicationResponse(BaseModel):
     referral: Referral
     referral_detail: str | None
     payment_method: PaymentMethod | None  # 마이그 회원은 NULL 가능
-    final_price: int | None
+    final_price: int | None  # 이번 결제 금액
+    total_paid: int | None   # 지금까지 누적 결제 금액
     start_date: date
     end_date: date
     motivation: Motivation | None

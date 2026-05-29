@@ -64,10 +64,12 @@ def create_member(
         referral_detail=(data.referral_detail or "").strip() or None,
         payment_method=data.payment_method.value,
         final_price=data.final_price,
+        # 신규 가입은 이번 결제 = 누적 결제 동일
+        total_paid=data.final_price,
         start_date=data.start_date,
         end_date=data.end_date,
-        locker_pass_id=data.locker_pass_id,             
-        clothes_pass_id=data.clothes_pass_id,           
+        locker_pass_id=data.locker_pass_id,
+        clothes_pass_id=data.clothes_pass_id,
         motivation=data.motivation.value,
         agreed_terms=data.agreed_terms,
         agreed_marketing=data.agreed_marketing,
@@ -319,8 +321,9 @@ def re_register_member(
     member.locker_pass_id = data.locker_pass_id
     member.clothes_pass_id = data.clothes_pass_id
     member.payment_method = data.payment_method.value
-    # final_price 누적 - 기존 값 + 이번 결제 (None이면 0으로 시작)
-    member.final_price = (member.final_price or 0) + data.final_price
+    # 이번 결제 금액은 final_price를 덮어쓰고, 누적은 total_paid에 합산
+    member.final_price = data.final_price
+    member.total_paid = (member.total_paid or 0) + data.final_price
     member.start_date = data.start_date
     member.end_date = data.end_date
     # status 재활성화 (EXPIRED/HELD였든 무관, 재등록은 활성으로)
@@ -334,9 +337,9 @@ def re_register_member(
 
     logger.info(
         "회원 재등록 완료: member_id=%s, branch_id=%s, name=%s, phone=%s, "
-        "누적 final_price=%s",
+        "이번 결제=%s, 누적 결제=%s",
         member.id, data.branch_id, data.name, mask_phone(data.phone),
-        member.final_price,
+        member.final_price, member.total_paid,
     )
 
     # RE_REGISTERED 알림톡 (안부 톤)

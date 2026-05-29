@@ -285,6 +285,7 @@ def build_member_row(d: dict, branch, memberships, lockers, clothes, today, warn
         "referral_detail": ref_detail,
         "payment_method": None,
         "final_price": d.get("final_price"),
+        "total_paid": d.get("final_price"),  # 첫 결제 = 누적
         "start_date": start_date,
         "end_date": end_date,
         "motivation": _parse_motivation(d.get("motivation_raw")),
@@ -328,6 +329,7 @@ def build_pt_row(d: dict, branch, pt_passes, today, warnings: list[str]):
         "referral_detail": ref_detail,
         "payment_method": None,
         "final_price": d.get("final_price"),
+        "total_paid": d.get("final_price"),  # 첫 결제 = 누적
         "start_date": start_date,
         "end_date": end_date,
         "motivation": _parse_motivation(d.get("motivation_raw")),
