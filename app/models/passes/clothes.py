@@ -24,6 +24,8 @@ class ClothesPass(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     cash_price: Mapped[int] = mapped_column(Integer, nullable=False)
     card_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 이용 기간 (개월). 1·3·6·12 등. 예외 케이스는 NULL
+    duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

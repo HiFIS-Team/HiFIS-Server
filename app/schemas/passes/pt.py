@@ -9,6 +9,10 @@ class PTPassCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     cash_price: int = Field(..., ge=0, description="현금가 (원)")
     card_price: int = Field(..., ge=0, description="카드가 (원)")
+    duration_months: int | None = Field(
+        default=None, ge=1, le=120,
+        description="이용 기간 (개월). PT는 회당 진행이라 NULL 가능",
+    )
     # PT 수강권은 기본적으로 락커·운동복 무료 제공이라 default=True
     # 무료 제공 아닌 수강권만 명시적으로 false 보내면 됨
     provides_locker: bool = Field(
@@ -23,6 +27,7 @@ class PTPassUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=50)
     cash_price: int | None = Field(default=None, ge=0)
     card_price: int | None = Field(default=None, ge=0)
+    duration_months: int | None = Field(default=None, ge=1, le=120)
     provides_locker: bool | None = None
     provides_clothes: bool | None = None
 
@@ -35,6 +40,7 @@ class PTPassResponse(BaseModel):
     name: str
     cash_price: int
     card_price: int
+    duration_months: int | None
     provides_locker: bool
     provides_clothes: bool
     created_at: datetime

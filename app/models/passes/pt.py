@@ -24,6 +24,8 @@ class PTPass(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     cash_price: Mapped[int] = mapped_column(Integer, nullable=False)
     card_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 이용 기간 (개월). PT는 회당 진행이라 NULL 가능 - 사장님 운영 룰에 따라 박음
+    duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # 수강권에 락커·운동복이 포함되어 있으면 True - 신청 시 별도 선택 차단, 가격 합산 제외
     provides_locker: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false",

@@ -77,6 +77,12 @@ _REFERRAL_MAP = {
     "-": "OTHER",
 }
 
+# 엑셀 "구분" → HiFIS Member/PT category (없으면 NEW)
+_CATEGORY_MAP = {
+    "신규": "NEW",
+    "재등록": "EXISTING",
+}
+
 # 엑셀 운동목적 → Motivation (없으면 NULL로 박음)
 _MOTIVATION_MAP = {
     "체형교정": "POSTURE_CORRECTION",
@@ -331,6 +337,10 @@ def build_row_data(
     motivation_raw = str(row.get("운동목적") or "").strip()
     motivation = _MOTIVATION_MAP.get(motivation_raw)  # None이면 NULL
 
+    # 신규/재등록 구분 (브로제이 "구분" 컬럼 - 옛 회원도 그대로 보존)
+    category_raw = str(row.get("구분") or "").strip()
+    category = _CATEGORY_MAP.get(category_raw, "NEW")
+
     address = str(row.get("간단 주소") or "").strip() or "-"
 
     last_purchase = _parse_birth_date(row.get("최근 구매일"))
@@ -375,6 +385,7 @@ def build_row_data(
                 "membership_pass_id": head_obj.id,
                 "locker_pass_id": m_eff_locker.id if m_eff_locker else None,
                 "clothes_pass_id": m_eff_clothes.id if m_eff_clothes else None,
+                "category": category,  # 신규/재등록
                 "total_paid": final_price,  # 마이그는 첫 결제 = 누적
                 "name": name,
                 "gender": None,  # 엑셀에 없음
@@ -423,6 +434,7 @@ def build_row_data(
                 "pt_pass_id": head_obj.id,
                 "locker_pass_id": p_eff_locker.id if p_eff_locker else None,
                 "clothes_pass_id": p_eff_clothes.id if p_eff_clothes else None,
+                "category": category,  # 신규/재등록
                 "total_paid": final_price,  # 마이그는 첫 결제 = 누적
                 "name": name,
                 "gender": None,
