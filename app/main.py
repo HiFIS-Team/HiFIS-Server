@@ -23,6 +23,7 @@ from app.api.passes import pt as pt_pass_api
 from app.api.registrations import member as member_api
 from app.api import enums as enums_api
 from app.api.registrations import pt_application as pt_application_api
+from app.api.registrations import lookup as registrations_lookup_api
 from app.api.admin import admin as admin_api
 from app.api.messaging import message as message_api
 from app.api.admin import stats as stats_api
@@ -95,6 +96,7 @@ app.include_router(member_api.admin_router)
 app.include_router(enums_api.public_router)
 app.include_router(pt_application_api.public_router)
 app.include_router(pt_application_api.admin_router)
+app.include_router(registrations_lookup_api.router)
 app.include_router(admin_api.public_router)
 app.include_router(admin_api.admin_router)
 app.include_router(admin_api.me_router)

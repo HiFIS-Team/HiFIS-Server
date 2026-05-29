@@ -75,11 +75,19 @@ class PTApplication(Base):
         Boolean, nullable=False, server_default="false", default=False,
     )
 
-    # 상태 관ㄹ
+    # 상태 관리
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="REGISTERED",
+    )
+    # 구분 - NEW(신규) / EXISTING(재등록)
+    # 신규 신청 시 NEW로 INSERT, 재등록 endpoint(/pt-applications/re-register)가 EXISTING으로 UPDATE
+    category: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="NEW",
+        default="NEW",
     )
 
     created_at: Mapped[datetime] = mapped_column(

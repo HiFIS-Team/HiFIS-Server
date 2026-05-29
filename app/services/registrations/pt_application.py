@@ -16,6 +16,7 @@ from app.models.admin.admin import Admin
 from app.models.registrations.pt_application import PTApplication
 from app.schemas.registrations.pt_application import (
     PTApplicationCreate,
+    PTApplicationReRegister,
     PTApplicationStatusUpdate,
     PTApplicationUpdate,
 )
@@ -264,3 +265,99 @@ def delete_pt_application(db: Session, application_id: UUID, current_admin: Admi
     db.delete(application)
     db.commit()
     logger.info("PT 신청 삭제 완료: application_id=%s", application_id)
+
+
+def re_register_pt_application(
+    db: Session,
+    data: PTApplicationReRegister,
+    background_tasks: BackgroundTasks | None = None,
+) -> PTApplication:
+    """PT 재등록 - 기존 PT 행 UPDATE + final_price 누적 + RE_REGISTERED 알림톡.
+
+    식별: branch_id + name + phone 셋 다 일치 (없으면 404, 다건이면 400).
+    """
+    branch = get_branch(db, data.branch_id)
+    new_pass = ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
+    assert_no_free_provided_conflict(
+        new_pass, data.locker_pass_id, data.clothes_pass_id,
+    )
+    if data.locker_pass_id is not None:
+        ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+    if data.clothes_pass_id is not None:
+        ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+
+    matches = (
+        db.query(PTApplication)
+        .filter(
+            PTApplication.branch_id == data.branch_id,
+            PTApplication.name == data.name,
+            PTApplication.phone == data.phone,
+        )
+        .all()
+    )
+    if len(matches) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="재등록할 PT 신청 정보를 찾을 수 없습니다. 이름·전화번호를 확인해 주세요.",
+        )
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="동일 정보 PT 신청이 여러 건 있습니다. 어드민에 문의해 주세요.",
+        )
+    application = matches[0]
+
+    application.pt_pass_id = data.pt_pass_id
+    application.locker_pass_id = data.locker_pass_id
+    application.clothes_pass_id = data.clothes_pass_id
+    application.payment_method = data.payment_method.value
+    application.final_price = (application.final_price or 0) + data.final_price
+    application.start_date = data.start_date
+    application.end_date = data.end_date
+    application.status = MemberStatus.REGISTERED.value
+    application.category = "EXISTING"
+    if data.agreed_marketing is not None:
+        application.agreed_marketing = data.agreed_marketing
+
+    db.commit()
+    db.refresh(application)
+
+    logger.info(
+        "PT 재등록 완료: application_id=%s, branch_id=%s, name=%s, phone=%s, "
+        "누적 final_price=%s",
+        application.id, data.branch_id, data.name, mask_phone(data.phone),
+        application.final_price,
+    )
+
+    try:
+        message_service.send_message(db, MessageSendRequest(
+            branch_id=data.branch_id,
+            source_type=MessageSourceType.PT_APPLICATION,
+            source_id=application.id,
+            trigger_type=TriggerType.RE_REGISTERED,
+            recipient=data.phone,
+            name=data.name,
+        ))
+    except Exception as e:
+        logger.error(
+            "PT 재등록 알림 발송 실패: application_id=%s, error=%s",
+            application.id, str(e),
+        )
+
+    try:
+        notification_service.notify_branch_event(
+            db,
+            branch_id=data.branch_id,
+            source_type=NotificationSourceType.PT_APPLICATION,
+            source_id=application.id,
+            title=f"PT 재등록 - {branch.name}",
+            body=f"{data.name}님이 PT 재등록했습니다.",
+            background_tasks=background_tasks,
+        )
+    except Exception as e:
+        logger.error(
+            "PT 재등록 어드민 알림 fan-out 실패: application_id=%s, error=%s",
+            application.id, str(e),
+        )
+
+    return application
