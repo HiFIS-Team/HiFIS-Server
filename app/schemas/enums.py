@@ -145,6 +145,7 @@ MOTIVATION_LABELS: dict[Motivation, str] = {
 TRIGGER_LABELS: dict[TriggerType, str] = {
     TriggerType.RESERVATION_CONFIRM: "예약 확인",
     TriggerType.REGISTERED: "신청 등록",
+    TriggerType.RE_REGISTERED: "재등록",
     TriggerType.HOLD: "홀딩 시작",
     TriggerType.HOLD_CANCEL: "홀딩 취소",
     TriggerType.RESERVATION_CHECK_1: "예약 +3일 미등록 안내",
