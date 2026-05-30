@@ -30,6 +30,7 @@ from app.api.admin import stats as stats_api
 from app.api.admin import dashboard as dashboard_api
 from app.api.admin import notification as notification_api
 from app.api.admin import push_subscription as push_subscription_api
+from app.api.admin import system_config as system_config_api
 from app.api import hold as hold_api
 from app.api.passes import locker as locker_pass_api
 from app.api.passes import clothes as clothes_pass_api
@@ -105,6 +106,7 @@ app.include_router(stats_api.admin_router)
 app.include_router(dashboard_api.admin_router)
 app.include_router(notification_api.admin_router)
 app.include_router(push_subscription_api.admin_router)
+app.include_router(system_config_api.router)
 app.include_router(hold_api.admin_router)
 app.include_router(locker_pass_api.public_router)
 app.include_router(locker_pass_api.admin_router)

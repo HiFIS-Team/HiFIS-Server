@@ -36,6 +36,10 @@ class BranchUpdate(BaseModel):
         default=None,
         description="안부 메시지 발송자 변경 - 해당 지점 admin이어야 함",
     )
+    messaging_enabled: bool | None = Field(
+        default=None,
+        description="이 지점의 알림톡 발송 토글 (전역 SystemConfig.messaging_enabled와 AND 동작)",
+    )
 
 class BranchResponse(BaseModel):
     """지점 응답 - messenger nested로 발송자 이름·직책 같이 내려감"""
@@ -48,4 +52,5 @@ class BranchResponse(BaseModel):
     naver_place_url: str | None
     messenger_admin_id: UUID | None
     messenger: MessengerAdminBrief | None
+    messaging_enabled: bool
     created_at: datetime
