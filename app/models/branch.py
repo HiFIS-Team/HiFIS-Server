@@ -34,10 +34,14 @@ class Branch(Base):
     broj_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false",
     )
-    # 다짐(Dagym) 자동 회원 등록 - 첨단점·동광주점 대상 (현재 동광주점만 활성)
+    # 다짐(Dagym) 자동 회원 등록 - 첨단점·동광주점 대상
     # 브로제이와 독립. 둘 다 켜져 있으면 둘 다 호출.
     dajim_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false",
+    )
+    # 다짐 GYM_ID - 지점별 다름. dajim_enabled=True인 지점만 채움 (NULL이면 등록 스킵)
+    dajim_gym_id: Mapped[str | None] = mapped_column(
+        String(50), nullable=True,
     )
     # 안부 메시지(D+N, 만기 안내 등) 발송자로 고정될 admin - 없으면 시스템 양식으로 폴백
     # use_alter=True: admins ↔ branches 순환 FK라 별도 ALTER TABLE로 추가 (drop 시 cycle 해결)

@@ -121,9 +121,11 @@ def create_member(
         if branch.broj_enabled:
             from app.services import broj as broj_service
             background_tasks.add_task(broj_service.register_member, member)
-        if branch.dajim_enabled:
+        if branch.dajim_enabled and branch.dajim_gym_id:
             from app.services import dajim as dajim_service
-            background_tasks.add_task(dajim_service.register_member, member)
+            background_tasks.add_task(
+                dajim_service.register_member, member, branch.dajim_gym_id,
+            )
 
     return member
 

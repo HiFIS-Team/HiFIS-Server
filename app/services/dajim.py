@@ -139,19 +139,21 @@ def _get_token(client: httpx.Client, force_refresh: bool = False) -> str | None:
     return _cached_token
 
 
-def register_member(member: Member) -> None:
+def register_member(member: Member, gym_id: str) -> None:
     """HiFIS 회원을 다짐에 자동 등록.
 
+    gym_id : Branch.dajim_gym_id (지점별 다름)
     BackgroundTasks로 호출되므로 실패해도 throw 안 함 (best-effort).
     HiFIS DB·메인 흐름은 영향 없음. 실패하면 로그만 남음.
     """
-    if (
-        not settings.DAJIM_LOGIN_EMAIL
-        or not settings.DAJIM_LOGIN_PW
-        or not settings.DAJIM_GYM_ID
-    ):
+    if not settings.DAJIM_LOGIN_EMAIL or not settings.DAJIM_LOGIN_PW:
         logger.warning(
-            "다짐 설정 미흡 (LOGIN_EMAIL·PW·GYM_ID 중 비어있음) → 등록 스킵",
+            "다짐 설정 미흡 (LOGIN_EMAIL·PW 비어있음) → 등록 스킵",
+        )
+        return
+    if not gym_id:
+        logger.warning(
+            "다짐 gym_id 비어있음 → 등록 스킵 (Branch.dajim_gym_id 필수)",
         )
         return
 
@@ -188,7 +190,7 @@ def register_member(member: Member) -> None:
                     headers={
                         "authorization": token,  # Bearer 없이 토큰만 (다짐 방식)
                         "app-type": "managerPC",
-                        "x-gym-id": settings.DAJIM_GYM_ID,
+                        "x-gym-id": gym_id,  # 지점별 GYM_ID
                         "content-type": "application/json",
                     },
                 )

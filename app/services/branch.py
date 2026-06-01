@@ -90,6 +90,8 @@ def update_branch(db: Session, branch_id: UUID, data: BranchUpdate) -> Branch:
         branch.broj_enabled = data.broj_enabled
     if data.dajim_enabled is not None:
         branch.dajim_enabled = data.dajim_enabled
+    if data.dajim_gym_id is not None:
+        branch.dajim_gym_id = data.dajim_gym_id
 
     db.commit()
     db.refresh(branch)

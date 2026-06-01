@@ -54,12 +54,12 @@ class Settings(BaseSettings):
     BROJ_LOGIN_PW: str = ""
     BROJ_JGROUP_TOKEN: str = ""
 
-    # 다짐(Dagym) 자동 회원 등록 - 동광주점 활성 (첨단점은 추후 GYM_ID 분기 시 활성).
+    # 다짐(Dagym) 자동 회원 등록 - 첨단점·동광주점 활성.
     # GraphQL 기반. 비밀번호는 평문 → 코드가 SHA-256 hex로 변환해 전송.
     # 토큰은 로그인 응답에 포함, 메모리 캐싱 + 401/403 시 재로그인.
+    # GYM_ID는 지점별 다름 → Branch.dajim_gym_id 컬럼에서 가져옴 (.env엔 없음)
     DAJIM_LOGIN_EMAIL: str = ""
     DAJIM_LOGIN_PW: str = ""
-    DAJIM_GYM_ID: str = ""
 
     CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = []
 
