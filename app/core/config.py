@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # 이력(Message 테이블)은 SUCCESS로 저장돼 화면에 발송된 것처럼 보이지만 실 발송 0.
     MESSAGING_ENABLED: bool = True
 
+    # 브로제이(BroJ) 자동 회원 등록 - 화순점만 운영 중. 다른 지점 운영 시 별도 계정·토큰 필요.
+    # 토글은 Branch.broj_enabled (지점별). 환경변수는 인증 정보 1세트만 보관.
+    # JGROUP_TOKEN은 브로제이 브라우저 네트워크탭에서 복사 (만료 시 사장님이 갱신해서 .env 업데이트)
+    BROJ_LOGIN_ID: str = ""
+    BROJ_LOGIN_PW: str = ""
+    BROJ_JGROUP_TOKEN: str = ""
+
     CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = []
 
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")

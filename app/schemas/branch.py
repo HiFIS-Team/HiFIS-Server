@@ -40,6 +40,10 @@ class BranchUpdate(BaseModel):
         default=None,
         description="이 지점의 알림톡 발송 토글 (전역 SystemConfig.messaging_enabled와 AND 동작)",
     )
+    broj_enabled: bool | None = Field(
+        default=None,
+        description="브로제이 자동 회원 등록 토글 (회원가입 직후 BackgroundTasks로 브로제이 INSERT)",
+    )
 
 class BranchResponse(BaseModel):
     """지점 응답 - messenger nested로 발송자 이름·직책 같이 내려감"""
@@ -53,4 +57,5 @@ class BranchResponse(BaseModel):
     messenger_admin_id: UUID | None
     messenger: MessengerAdminBrief | None
     messaging_enabled: bool
+    broj_enabled: bool
     created_at: datetime

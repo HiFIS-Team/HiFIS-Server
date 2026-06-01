@@ -29,6 +29,11 @@ class Branch(Base):
     messaging_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false",
     )
+    # 브로제이(BroJ) 자동 회원 등록 - 회원가입 직후 BackgroundTasks로 브로제이에도 INSERT
+    # 화순점만 운영 중. 나머지 지점은 false 유지.
+    broj_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false",
+    )
     # 안부 메시지(D+N, 만기 안내 등) 발송자로 고정될 admin - 없으면 시스템 양식으로 폴백
     # use_alter=True: admins ↔ branches 순환 FK라 별도 ALTER TABLE로 추가 (drop 시 cycle 해결)
     messenger_admin_id: Mapped[UUID | None] = mapped_column(

@@ -86,6 +86,8 @@ def update_branch(db: Session, branch_id: UUID, data: BranchUpdate) -> Branch:
         branch.messenger_admin_id = data.messenger_admin_id
     if data.messaging_enabled is not None:
         branch.messaging_enabled = data.messaging_enabled
+    if data.broj_enabled is not None:
+        branch.broj_enabled = data.broj_enabled
 
     db.commit()
     db.refresh(branch)
