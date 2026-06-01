@@ -1,19 +1,21 @@
-"""매일 자정 자동 트리거 - 알림톡 발송 + 만기 상태 변경"""
+"""매일 자정 자동 트리거 - 알림톡 발송 + 만기 상태 변경 + 가입 잔재 정리"""
 import logging
-from datetime import date, timedelta
-from zoneinfo import ZoneInfo 
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.models.admin.admin import Admin
 from app.models.registrations.member import Member
 from app.models.messaging.message import Message
 from app.models.hold import Hold
 from app.models.registrations.pt_application import PTApplication
 from app.models.registrations.reservation import Reservation
 from app.schemas.enums import(
+    AdminStatus,
     MemberStatus,
     MessageSourceType,
     MessageStatus,
@@ -84,6 +86,9 @@ def run_daily_triggers() -> None:
 
         # 만기 +30일 재등록 권유
         _process_expired_followup(db, today, 30, TriggerType.EXPIRED_FOLLOWUP)
+
+        # PENDING_EMAIL 가입 잔재 정리 (24h 지난 미인증 row)
+        _cleanup_stale_pending_email_admins(db)
 
         logger.info("스케줄러 실행 완료")
     except Exception as e:
@@ -363,3 +368,26 @@ def _process_expired_holds(db: Session, today: date) -> None:
         "홀딩 자동 종료 정리: %d건, 영향 source: %d개",
         len(expired), len(affected),
     )
+
+def _cleanup_stale_pending_email_admins(db: Session) -> None:
+    """가입 후 24시간 지났는데 이메일 인증 안 끝낸 PENDING_EMAIL row 정리.
+
+    어드민 관리자 목록에 같은 이메일이 '인증 대기' + '활성' 둘로 보이는 잔재 차단.
+    EmailVerificationToken은 admin_id FK CASCADE라 같이 사라짐.
+    """
+    cutoff = datetime.now(KST) - timedelta(hours=24)
+    stale = db.query(Admin).filter(
+        Admin.status == AdminStatus.PENDING_EMAIL.value,
+        Admin.created_at < cutoff,
+    ).all()
+    if not stale:
+        return
+    for admin in stale:
+        logger.info(
+            "PENDING_EMAIL 24h 만료 cleanup: admin_id=%s, email=%s, created_at=%s",
+            admin.id, admin.email, admin.created_at,
+        )
+        db.delete(admin)
+    db.commit()
+    logger.info("PENDING_EMAIL 잔재 정리 완료: %d건", len(stale))
+
