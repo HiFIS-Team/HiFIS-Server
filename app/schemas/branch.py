@@ -44,6 +44,10 @@ class BranchUpdate(BaseModel):
         default=None,
         description="브로제이 자동 회원 등록 토글 (회원가입 직후 BackgroundTasks로 브로제이 INSERT)",
     )
+    dajim_enabled: bool | None = Field(
+        default=None,
+        description="다짐 자동 회원 등록 토글 (회원가입 직후 BackgroundTasks로 다짐 INSERT)",
+    )
 
 class BranchResponse(BaseModel):
     """지점 응답 - messenger nested로 발송자 이름·직책 같이 내려감"""
@@ -58,4 +62,5 @@ class BranchResponse(BaseModel):
     messenger: MessengerAdminBrief | None
     messaging_enabled: bool
     broj_enabled: bool
+    dajim_enabled: bool
     created_at: datetime

@@ -115,11 +115,15 @@ def create_member(
             member.id, str(e),
         )
 
-    # 브로제이 자동 등록 - Branch.broj_enabled=True인 지점만 (현재 화순점)
-    # BackgroundTasks로 응답 후 비동기 호출. 실패해도 HiFIS 정상.
-    if branch.broj_enabled and background_tasks is not None:
-        from app.services import broj as broj_service
-        background_tasks.add_task(broj_service.register_member, member)
+    # 외부 SaaS 자동 회원 등록 - 지점별 토글, BackgroundTasks 비동기, 실패해도 HiFIS 정상
+    # 둘 다 켜져 있으면 둘 다 호출 (이론상 가능, 현실은 지점당 1개만 ON)
+    if background_tasks is not None:
+        if branch.broj_enabled:
+            from app.services import broj as broj_service
+            background_tasks.add_task(broj_service.register_member, member)
+        if branch.dajim_enabled:
+            from app.services import dajim as dajim_service
+            background_tasks.add_task(dajim_service.register_member, member)
 
     return member
 
