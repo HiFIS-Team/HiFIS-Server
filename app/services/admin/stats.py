@@ -15,7 +15,7 @@ from app.schemas.enums import (
     Motivation,
     Referral,
 )
-from app.schemas.admin.stats import StatItem, StatsResponse
+from app.schemas.admin.stats import StatDetailItem, StatItem, StatsResponse
 
 def _current_month_range() -> tuple[datetime, datetime]:
     """이번 달 시작 / 다음 달 시작 반환 (created_at 필터용)"""
@@ -28,7 +28,7 @@ def _current_month_range() -> tuple[datetime, datetime]:
     return month_start, next_month_start
 
 def get_referral_stats(db: Session, branch_id: UUID | None, current_admin: Admin) -> StatsResponse:
-    """이번 달 유입경로 통계 (Member + PTApplication 합산)"""
+    """이번 달 유입경로 통계 (Member + PTApplication 합산) + 기타 세부 입력"""
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
     month_start, next_month_start = _current_month_range()
 
@@ -56,7 +56,7 @@ def get_referral_stats(db: Session, branch_id: UUID | None, current_admin: Admin
         counts[code] = counts.get(code, 0) + c
     for code, c in pt_rows:
         counts[code] = counts.get(code, 0) + c
-    
+
     items = [
         StatItem(
             code=ref.value,
@@ -66,7 +66,50 @@ def get_referral_stats(db: Session, branch_id: UUID | None, current_admin: Admin
         for ref in Referral
     ]
     total = sum(item.count for item in items)
-    return StatsResponse(items=items, total=total)
+
+    # 기타 세부 입력 집계 (referral_detail IS NOT NULL AND != '')
+    detail_member_q = db.query(
+        Member.referral_detail, func.count().label("c"),
+    ).filter(
+        Member.created_at >= month_start,
+        Member.created_at < next_month_start,
+        Member.referral_detail.is_not(None),
+        Member.referral_detail != "",
+    )
+    if effective_branch_id is not None:
+        detail_member_q = detail_member_q.filter(
+            Member.branch_id == effective_branch_id,
+        )
+    detail_member_rows = detail_member_q.group_by(Member.referral_detail).all()
+
+    detail_pt_q = db.query(
+        PTApplication.referral_detail, func.count().label("c"),
+    ).filter(
+        PTApplication.created_at >= month_start,
+        PTApplication.created_at < next_month_start,
+        PTApplication.referral_detail.is_not(None),
+        PTApplication.referral_detail != "",
+    )
+    if effective_branch_id is not None:
+        detail_pt_q = detail_pt_q.filter(
+            PTApplication.branch_id == effective_branch_id,
+        )
+    detail_pt_rows = detail_pt_q.group_by(PTApplication.referral_detail).all()
+
+    detail_counts: dict[str, int] = {}
+    for label, c in detail_member_rows:
+        detail_counts[label] = detail_counts.get(label, 0) + c
+    for label, c in detail_pt_rows:
+        detail_counts[label] = detail_counts.get(label, 0) + c
+
+    details = [
+        StatDetailItem(label=label, count=cnt)
+        for label, cnt in sorted(
+            detail_counts.items(), key=lambda x: x[1], reverse=True,
+        )
+    ]
+
+    return StatsResponse(items=items, total=total, details=details)
 
 def get_motivation_stats(
     db: Session,

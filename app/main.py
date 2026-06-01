@@ -23,12 +23,14 @@ from app.api.passes import pt as pt_pass_api
 from app.api.registrations import member as member_api
 from app.api import enums as enums_api
 from app.api.registrations import pt_application as pt_application_api
+from app.api.registrations import lookup as registrations_lookup_api
 from app.api.admin import admin as admin_api
 from app.api.messaging import message as message_api
 from app.api.admin import stats as stats_api
 from app.api.admin import dashboard as dashboard_api
 from app.api.admin import notification as notification_api
 from app.api.admin import push_subscription as push_subscription_api
+from app.api.admin import system_config as system_config_api
 from app.api import hold as hold_api
 from app.api.passes import locker as locker_pass_api
 from app.api.passes import clothes as clothes_pass_api
@@ -40,6 +42,24 @@ logging.basicConfig(
 )
 # httpx는 외부 API 호출(Solapi·Claude)마다 INFO 로그를 찍어 소음이 큼 → WARNING으로
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# Sentry 에러 추적 - DSN 비어있으면 init 건너뜀(개발 환경 no-op)
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.SENTRY_ENVIRONMENT,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        # 회원·관리자 전화번호·이메일 마스킹 위해 PII 자동 첨부 끄기
+        send_default_pii=False,
+        integrations=[
+            FastApiIntegration(),
+            SqlalchemyIntegration(),
+        ],
+    )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -77,15 +97,16 @@ app.include_router(member_api.admin_router)
 app.include_router(enums_api.public_router)
 app.include_router(pt_application_api.public_router)
 app.include_router(pt_application_api.admin_router)
+app.include_router(registrations_lookup_api.router)
 app.include_router(admin_api.public_router)
 app.include_router(admin_api.admin_router)
 app.include_router(admin_api.me_router)
-app.include_router(message_api.router) 
 app.include_router(message_api.admin_router) 
 app.include_router(stats_api.admin_router)
 app.include_router(dashboard_api.admin_router)
 app.include_router(notification_api.admin_router)
 app.include_router(push_subscription_api.admin_router)
+app.include_router(system_config_api.router)
 app.include_router(hold_api.admin_router)
 app.include_router(locker_pass_api.public_router)
 app.include_router(locker_pass_api.admin_router)

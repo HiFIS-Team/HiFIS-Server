@@ -94,12 +94,12 @@ def mock_external_apis(monkeypatch):
     # Solapi send_sms: (success=True, error=None) 반환
     monkeypatch.setattr(
         "app.services.messaging.solapi.send_sms",
-        lambda recipient, content, subject="": (True, None),
+        lambda recipient, content, subject="", sender=None: (True, None),
     )
     # message.py가 from solapi import send_sms 했다면 거기도 패치
     monkeypatch.setattr(
         "app.services.messaging.message.solapi.send_sms",
-        lambda recipient, content, subject="": (True, None),
+        lambda recipient, content, subject="", sender=None: (True, None),
         raising=False,
     )
     # Claude: 가짜 본문 반환

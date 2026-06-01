@@ -43,12 +43,15 @@ class MemberStatus(str, Enum):
     HELD = "HELD"              # 홀딩 중 (활성 hold 존재)
     EXPIRED = "EXPIRED"        # 만기
 
+# 안부 트리거 - 진짜 사람이 보내는 톤(자기소개+본문, 푸터 없음). 발송자 이름·직책 필요.
+# 나머지 트리거는 시스템 톤(헤더+본문+푸터, 직원 정보 없음).
 class TriggerType(str, Enum):
     """알림톡 발송 트리거 (11종)"""
 
     # 실시간 발송 (API 직후)
     RESERVATION_CONFIRM = "RESERVATION_CONFIRM" # 예약 등록 직후
     REGISTERED = "REGISTERED" # 회원/PT 신청서 제출 직후
+    RE_REGISTERED = "RE_REGISTERED" # 회원 재등록 직후 (안부 톤)
     HOLD = "HOLD" # 홀딩 신청 직후 (사유 기반 AI 본문)
     HOLD_CANCEL = "HOLD_CANCEL" # 홀딩 취소 시 (AI 본문)
 
@@ -85,6 +88,24 @@ class NotificationSourceType(str, Enum):
     MEMBER = "MEMBER"                # 새 회원가입
     PT_APPLICATION = "PT_APPLICATION"  # 새 PT 신청
     FC_SIGNUP = "FC_SIGNUP"          # FC 가입 인증 완료 → 승인 대기
+
+class Position(str, Enum):
+    """관리자 직책 - 권한 차이 없음(다 본인 지점 권한), 표시·메시지 발신자 직책용"""
+    MANAGER = "MANAGER"           # 점장
+    TEAM_LEADER = "TEAM_LEADER"   # 팀장
+    TRAINER = "TRAINER"           # 트레이너
+    FC = "FC"                     # FC
+
+class AdminRole(str, Enum):
+    """관리자 권한 - SUPER_ADMIN(전 지점) / FC(본인 지점만)"""
+    SUPER_ADMIN = "SUPER_ADMIN"
+    FC = "FC"
+
+class AdminStatus(str, Enum):
+    """FC 계정 상태 - 가입 → 이메일 인증 → SUPER_ADMIN 승인 → 활성화"""
+    PENDING_EMAIL = "PENDING_EMAIL"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    ACTIVE = "ACTIVE"
 
 # === 한국어 라벨 매핑 (프론트 표시용) ===
 
@@ -124,6 +145,7 @@ MOTIVATION_LABELS: dict[Motivation, str] = {
 TRIGGER_LABELS: dict[TriggerType, str] = {
     TriggerType.RESERVATION_CONFIRM: "예약 확인",
     TriggerType.REGISTERED: "신청 등록",
+    TriggerType.RE_REGISTERED: "재등록",
     TriggerType.HOLD: "홀딩 시작",
     TriggerType.HOLD_CANCEL: "홀딩 취소",
     TriggerType.RESERVATION_CHECK_1: "예약 +3일 미등록 안내",
@@ -143,6 +165,31 @@ SOURCE_TYPE_LABELS: dict[MessageSourceType, str] = {
     MessageSourceType.RESERVATION: "예약",
     MessageSourceType.HOLD: "홀딩",
 }
+
+POSITION_LABELS: dict[Position, str] = {
+    Position.MANAGER: "점장",
+    Position.TEAM_LEADER: "팀장",
+    Position.TRAINER: "트레이너",
+    Position.FC: "FC",
+}
+
+# 안부 트리거 - 발송자 이름·직책 박힘, 푸터 없음 (진짜 사람이 보내는 톤)
+PERSONAL_TRIGGERS: set[TriggerType] = {
+    TriggerType.D_PLUS_7,
+    TriggerType.D_PLUS_14,
+    TriggerType.D_PLUS_30,
+    TriggerType.EXPIRY_SOON_5,
+    TriggerType.EXPIRY_SOON_2,
+    TriggerType.EXPIRED_TODAY,
+    TriggerType.EXPIRED_FOLLOWUP,
+    TriggerType.RE_REGISTERED,
+}
+
+
+class MemberCategory(str, Enum):
+    """회원 구분 - 신청 진입 경로에 따라 자동 분류"""
+    NEW = "NEW"            # 신규 가입 (POST /members)
+    EXISTING = "EXISTING"  # 재등록 (POST /members/re-register)
 
 # === 옵션 응답 헬퍼 ===
 

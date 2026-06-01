@@ -1,25 +1,10 @@
 from datetime import datetime
-from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-class AdminRole(str, Enum):
-    SUPER_ADMIN = "SUPER_ADMIN"
-    FC = "FC"
+from app.schemas.enums import AdminRole, AdminStatus, Position
 
-class AdminStatus(str, Enum):
-    """FC 계정 상태 - 가입 -> 이메일 인증 -> 승인 호출"""
-    PENDING_EMAIL = "PENDING_EMAIL"       
-    PENDING_APPROVAL = "PENDING_APPROVAL"  
-    ACTIVE = "ACTIVE"      
-
-class AdminSignup(BaseModel):
-    """FC 셀프 회원가입 요청 (Public)"""
-    email: EmailStr
-    name: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=8, max_length=100)
-    branch_id: UUID = Field(..., description="소속 지점")       
 
 class AdminSignup(BaseModel):
     """FC 셀프 회원가입 요청 (Public)"""
@@ -27,30 +12,31 @@ class AdminSignup(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     password: str = Field(..., min_length=8, max_length=100)
     branch_id: UUID = Field(..., description="소속 지점")
+    position: Position = Field(..., description="직책 (점장/팀장/트레이너/FC)")
 
 class EmailVerifyRequest(BaseModel):
     """이메일 인증번호 검증 요청 (Public)"""
     email: EmailStr
     code: str = Field(..., min_length=6, max_length=6, description="6자리 인증번호")
 
-class AdminCreate(BaseModel):
-    """FC 계정 생성 요청 (SUPER_ADMIN 전용)"""
-    email: EmailStr
-    name: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=8, max_length=100)
-    branch_id: UUID = Field(..., description="FC 소속 지점")
-
 class AdminResponse(BaseModel):
-    """관리자 응답 (password_hash 제외)"""
+    """관리자 응답 (password_hash 제외).
+
+    last_seen_at·is_online은 SUPER_ADMIN이 보는 목록(/admin/admins) 등에서 활용.
+    본인 정보(/admin/me)에도 함께 노출 (본인은 항상 is_online=True).
+    """
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     email: str
     name: str
     role: AdminRole
+    position: Position | None  # SUPER_ADMIN은 NULL
     status: AdminStatus
     branch_id: UUID | None
     created_at: datetime
+    last_seen_at: datetime | None = None
+    is_online: bool = False
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -89,4 +75,3 @@ class PasswordResetConfirm(BaseModel):
     email: EmailStr
     code: str = Field(..., min_length=6, max_length=6)
     new_password: str = Field(..., min_length=8, max_length=100)
-

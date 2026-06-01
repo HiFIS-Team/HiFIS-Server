@@ -21,6 +21,9 @@ def create_pt_pass(db: Session, data: PTPassCreate, current_admin: Admin) -> PTP
         name=data.name,
         cash_price=data.cash_price,
         card_price=data.card_price,
+        duration_months=data.duration_months,
+        provides_locker=data.provides_locker,
+        provides_clothes=data.provides_clothes,
     )
     db.add(pass_obj)
     db.commit()
@@ -70,7 +73,13 @@ def update_pt_pass(db: Session, pass_id: UUID, data: PTPassUpdate, current_admin
         pass_obj.cash_price = data.cash_price
     if data.card_price is not None:
         pass_obj.card_price = data.card_price
-    
+    if data.duration_months is not None:
+        pass_obj.duration_months = data.duration_months
+    if data.provides_locker is not None:
+        pass_obj.provides_locker = data.provides_locker
+    if data.provides_clothes is not None:
+        pass_obj.provides_clothes = data.provides_clothes
+
     db.commit()
     db.refresh(pass_obj)
     return pass_obj

@@ -11,6 +11,7 @@ from app.db.deps import get_db
 from app.schemas.common import Page
 from app.schemas.registrations.pt_application import (
     PTApplicationCreate,
+    PTApplicationReRegister,
     PTApplicationResponse,
     PTApplicationUpdate,
 )
@@ -30,6 +31,23 @@ def create_pt_application(
 ):
     """PT 신청서 생성 (Public). 어드민 알림은 BackgroundTasks로 응답 후 발송."""
     return pt_application_service.create_pt_application(db, payload, background_tasks)
+
+
+@public_router.post("/re-register", response_model=PTApplicationResponse)
+@limiter.limit("30/minute")
+def re_register_pt_application(
+    request: Request,
+    payload: PTApplicationReRegister,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """PT 재등록 신청 (Public) - 기존 PT 행 UPDATE + final_price 누적.
+
+    식별: branch_id + name + phone 일치. 없으면 404, 둘 이상이면 400.
+    """
+    return pt_application_service.re_register_pt_application(
+        db, payload, background_tasks,
+    )
 
 # Admin - 인증 의존성은 인증 도입 후 부착
 admin_router = APIRouter(prefix="/admin/pt-applications", tags=["admin-pt-applications"])

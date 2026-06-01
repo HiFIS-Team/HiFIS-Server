@@ -14,60 +14,24 @@ from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.models.registrations.member import Member
-from app.models.passes.clothes import ClothesPass
-from app.models.passes.locker import LockerPass
-from app.models.passes.membership import MembershipPass
-from app.schemas.registrations.member import MemberCreate, MemberStatusUpdate, MemberUpdate, MemberStatus
+from app.schemas.registrations.member import (
+    MemberCreate,
+    MemberReRegister,
+    MemberStatusUpdate,
+    MemberUpdate,
+    MemberStatus,
+)
+from app.services.passes._validators import (
+    assert_no_free_provided_conflict,
+    ensure_clothes_pass_match,
+    ensure_locker_pass_match,
+    ensure_membership_pass_match,
+)
 from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_membership_pass_match( db: Session, membership_pass_id: UUID, branch_id: UUID):
-    """회원권 존재 + 해당 지점 회원권인지 검증"""
-    pass_obj = db.query(MembershipPass).filter(
-        MembershipPass.id == membership_pass_id
-    ).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 회원권입니다.",
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 회원권이 아닙니다."
-        )
-    
-def _ensure_locker_pass_match(db: Session, pass_id: UUID, branch_id: UUID) -> None:
-    """락커 상품 존재 + 해당 지점 상품인지 검증"""
-    pass_obj = db.query(LockerPass).filter(LockerPass.id == pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 락커 상품입니다.",
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 락커 상품이 아닙니다.",
-        )
-
-def _ensure_clothes_pass_match(db: Session, pass_id: UUID, branch_id: UUID) -> None:
-    """운동복 상품 존재 + 해당 지점 상품인지 검증"""
-    pass_obj = db.query(ClothesPass).filter(ClothesPass.id == pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 운동복 상품입니다.",
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 운동복 상품이 아닙니다.",
-        )
-
-    
 def create_member(
     db: Session,
     data: MemberCreate,
@@ -75,12 +39,18 @@ def create_member(
 ) -> Member:
     """회원가입 신청서 생성 - 지점/회원권 검증 → 저장 → 회원 LMS → 어드민 알림"""
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
-    _ensure_membership_pass_match(db, data.membership_pass_id, data.branch_id)
+    membership_pass = ensure_membership_pass_match(
+        db, data.membership_pass_id, data.branch_id,
+    )
+    # 락커·운동복 무료제공 회원권은 별도 락커·운동복 선택 차단
+    assert_no_free_provided_conflict(
+        membership_pass, data.locker_pass_id, data.clothes_pass_id,
+    )
 
     if data.locker_pass_id is not None:
-        _ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+        ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
     if data.clothes_pass_id is not None:
-        _ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+        ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
 
     member = Member(
         branch_id=data.branch_id,
@@ -91,14 +61,18 @@ def create_member(
         phone=data.phone,
         address=data.address,
         referral=data.referral.value,
+        referral_detail=(data.referral_detail or "").strip() or None,
         payment_method=data.payment_method.value,
         final_price=data.final_price,
+        # 신규 가입은 이번 결제 = 누적 결제 동일
+        total_paid=data.final_price,
         start_date=data.start_date,
         end_date=data.end_date,
-        locker_pass_id=data.locker_pass_id,             
-        clothes_pass_id=data.clothes_pass_id,           
+        locker_pass_id=data.locker_pass_id,
+        clothes_pass_id=data.clothes_pass_id,
         motivation=data.motivation.value,
         agreed_terms=data.agreed_terms,
+        agreed_marketing=data.agreed_marketing,
     )
     db.add(member)
     db.commit()
@@ -212,11 +186,29 @@ def update_member(
     """회원 정보 수정 (Admin, 부분 수정)"""
     member = get_member(db, member_id, current_admin)
 
+    # 수정 후 effective 회원권 - PATCH 본문 우선, 없으면 현재 값
     if data.membership_pass_id is not None:
-        _ensure_membership_pass_match(
-            db, data.membership_pass_id, member.branch_id
+        membership_pass = ensure_membership_pass_match(
+            db, data.membership_pass_id, member.branch_id,
         )
         member.membership_pass_id = data.membership_pass_id
+    else:
+        membership_pass = ensure_membership_pass_match(
+            db, member.membership_pass_id, member.branch_id,
+        )
+
+    # 무료제공 충돌 검사 - 변경 후의 effective 락커·운동복 vs 회원권 provides_*
+    effective_locker_id = (
+        data.locker_pass_id if data.locker_pass_id is not None
+        else member.locker_pass_id
+    )
+    effective_clothes_id = (
+        data.clothes_pass_id if data.clothes_pass_id is not None
+        else member.clothes_pass_id
+    )
+    assert_no_free_provided_conflict(
+        membership_pass, effective_locker_id, effective_clothes_id,
+    )
 
     if data.name is not None:
         member.name = data.name
@@ -230,6 +222,9 @@ def update_member(
         member.address = data.address
     if data.referral is not None:
         member.referral = data.referral.value
+    if data.referral_detail is not None:
+        cleaned = data.referral_detail.strip()
+        member.referral_detail = cleaned or None
     if data.payment_method is not None:
         member.payment_method = data.payment_method.value
     if data.final_price is not None:
@@ -239,14 +234,16 @@ def update_member(
     if data.end_date is not None:
         member.end_date = data.end_date
     if data.locker_pass_id is not None:
-        _ensure_locker_pass_match(db, data.locker_pass_id, member.branch_id)
+        ensure_locker_pass_match(db, data.locker_pass_id, member.branch_id)
         member.locker_pass_id = data.locker_pass_id
     if data.clothes_pass_id is not None:
-        _ensure_clothes_pass_match(db, data.clothes_pass_id, member.branch_id)
+        ensure_clothes_pass_match(db, data.clothes_pass_id, member.branch_id)
         member.clothes_pass_id = data.clothes_pass_id
     if data.motivation is not None:
         member.motivation = data.motivation.value
-    
+    if data.agreed_marketing is not None:
+        member.agreed_marketing = data.agreed_marketing
+
     db.commit()
     db.refresh(member)
     return member
@@ -270,4 +267,154 @@ def delete_member(db: Session, member_id: UUID, current_admin: Admin) -> None:
     db.delete(member)
     db.commit()
     logger.info("회원 삭제 완료: member_id=%s", member_id)
-    
+
+
+def re_register_member(
+    db: Session,
+    data: MemberReRegister,
+    background_tasks: BackgroundTasks | None = None,
+) -> Member:
+    """재등록 - 기존 회원 행 UPDATE + final_price 누적 + 알림톡 RE_REGISTERED
+
+    식별: branch_id + name + phone (셋 다 일치)
+    - 0건: 404 "재등록할 회원 정보를 찾을 수 없습니다"
+    - 2건+: 400 "동일 정보 회원 다건 - 어드민 확인 필요"
+    - 1건: 옛 행 UPDATE
+    """
+    branch = get_branch(db, data.branch_id)
+    # 새 회원권 검증 + 무료제공 충돌 체크 (provides_locker/provides_clothes)
+    new_pass = ensure_membership_pass_match(
+        db, data.membership_pass_id, data.branch_id,
+    )
+    assert_no_free_provided_conflict(
+        new_pass, data.locker_pass_id, data.clothes_pass_id,
+    )
+    if data.locker_pass_id is not None:
+        ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+    if data.clothes_pass_id is not None:
+        ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+
+    # 식별 - branch_id + name + phone
+    matches = (
+        db.query(Member)
+        .filter(
+            Member.branch_id == data.branch_id,
+            Member.name == data.name,
+            Member.phone == data.phone,
+        )
+        .all()
+    )
+    if len(matches) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="재등록할 회원 정보를 찾을 수 없습니다. 이름·전화번호를 확인해 주세요.",
+        )
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="동일 정보 회원이 여러 건 있습니다. 어드민에 문의해 주세요.",
+        )
+    member = matches[0]
+
+    # UPDATE - 새 회원권/락커/운동복/결제수단/기간으로 갱신
+    member.membership_pass_id = data.membership_pass_id
+    member.locker_pass_id = data.locker_pass_id
+    member.clothes_pass_id = data.clothes_pass_id
+    member.payment_method = data.payment_method.value
+    # 이번 결제 금액은 final_price를 덮어쓰고, 누적은 total_paid에 합산
+    member.final_price = data.final_price
+    member.total_paid = (member.total_paid or 0) + data.final_price
+    member.start_date = data.start_date
+    member.end_date = data.end_date
+    # status 재활성화 (EXPIRED/HELD였든 무관, 재등록은 활성으로)
+    member.status = MemberStatus.REGISTERED.value
+    member.category = "EXISTING"
+    if data.agreed_marketing is not None:
+        member.agreed_marketing = data.agreed_marketing
+
+    db.commit()
+    db.refresh(member)
+
+    logger.info(
+        "회원 재등록 완료: member_id=%s, branch_id=%s, name=%s, phone=%s, "
+        "이번 결제=%s, 누적 결제=%s",
+        member.id, data.branch_id, data.name, mask_phone(data.phone),
+        member.final_price, member.total_paid,
+    )
+
+    # RE_REGISTERED 알림톡 (안부 톤)
+    try:
+        message_service.send_message(db, MessageSendRequest(
+            branch_id=data.branch_id,
+            source_type=MessageSourceType.MEMBER,
+            source_id=member.id,
+            trigger_type=TriggerType.RE_REGISTERED,
+            recipient=data.phone,
+            name=data.name,
+        ))
+    except Exception as e:
+        logger.error(
+            "회원 재등록 알림 발송 실패: member_id=%s, error=%s",
+            member.id, str(e),
+        )
+
+    # 어드민 알림 fan-out (DB + Web Push)
+    try:
+        notification_service.notify_branch_event(
+            db,
+            branch_id=data.branch_id,
+            source_type=NotificationSourceType.MEMBER,
+            source_id=member.id,
+            title=f"재등록 - {branch.name}",
+            body=f"{data.name}님이 재등록했습니다.",
+            background_tasks=background_tasks,
+        )
+    except Exception as e:
+        logger.error(
+            "회원 재등록 어드민 알림 fan-out 실패: member_id=%s, error=%s",
+            member.id, str(e),
+        )
+
+    return member
+
+
+def bulk_import_members_silent(
+    db: Session, members_data: list[dict],
+) -> tuple[int, list[dict]]:
+    """기존 SaaS에서 옮겨온 회원 일괄 import - 알림 발송 0, INSERT만.
+
+    members_data: 검증·매핑이 끝난 dict 리스트. 각 dict는 Member 컬럼 키워드.
+        필수: branch_id, membership_pass_id, name, gender, birth_date, phone,
+              address, referral, payment_method, final_price, start_date,
+              end_date, motivation, agreed_terms, status, created_at
+        선택: locker_pass_id, clothes_pass_id, referral_detail, agreed_marketing
+
+    반환: (성공 수, 실패 row 리스트). 실패 row는 {'index', 'name', 'error'} 형식.
+
+    NOTE:
+    - LMS·Push 알림 전혀 발송 X (3000명 INSERT 시 폭탄 방지)
+    - created_at은 원본 가입일 그대로 박음 → D+7/14/30 트리거가 옛 회원에겐 자동 미발송
+    - 한 row 실패해도 나머지는 계속 진행 (DB savepoint per row)
+    """
+    success = 0
+    failed: list[dict] = []
+
+    for idx, data in enumerate(members_data):
+        try:
+            # 트랜잭션 안전성: 한 row가 깨져도 다음 row 진행
+            with db.begin_nested():
+                member = Member(**data)
+                db.add(member)
+            success += 1
+        except Exception as e:
+            failed.append({
+                "index": idx,
+                "name": data.get("name", "?"),
+                "error": str(e),
+            })
+
+    db.commit()
+    logger.info(
+        "bulk import 완료: 성공 %d, 실패 %d", success, len(failed),
+    )
+    return success, failed

@@ -14,62 +14,21 @@ from app.services.messaging import message as message_service
 from app.api.deps import assert_branch_access, resolve_branch_filter
 from app.models.admin.admin import Admin
 from app.models.registrations.pt_application import PTApplication
-from app.models.passes.clothes import ClothesPass
-from app.models.passes.locker import LockerPass
-from app.models.passes.pt import PTPass
 from app.schemas.registrations.pt_application import (
     PTApplicationCreate,
+    PTApplicationReRegister,
     PTApplicationStatusUpdate,
     PTApplicationUpdate,
+)
+from app.services.passes._validators import (
+    assert_no_free_provided_conflict,
+    ensure_clothes_pass_match,
+    ensure_locker_pass_match,
+    ensure_pt_pass_match,
 )
 from app.utils.masking import mask_phone
 
 logger = logging.getLogger(__name__)
-
-
-def _ensure_pt_pass_match(db: Session, pt_pass_id: UUID, branch_id: UUID) -> None:
-    """수강권 존재 + 해당 지점 수강권인지 검증"""
-    pass_obj = db.query(PTPass).filter(PTPass.id == pt_pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 수강권입니다."
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 수강권이 아닙니다."
-        )
-
-
-def _ensure_locker_pass_match(db: Session, locker_pass_id: UUID, branch_id: UUID) -> None:
-    """락커 상품 존재 + 해당 지점 상품인지 검증"""
-    pass_obj = db.query(LockerPass).filter(LockerPass.id == locker_pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 락커 상품입니다."
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 락커 상품이 아닙니다."
-        )
-
-
-def _ensure_clothes_pass_match(db: Session, clothes_pass_id: UUID, branch_id: UUID) -> None:
-    """운동복 상품 존재 + 해당 지점 상품인지 검증"""
-    pass_obj = db.query(ClothesPass).filter(ClothesPass.id == clothes_pass_id).first()
-    if pass_obj is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="존재하지 않는 운동복 상품입니다."
-        )
-    if pass_obj.branch_id != branch_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="해당 지점의 운동복 상품이 아닙니다."
-        )
 
 
 def create_pt_application(
@@ -79,11 +38,15 @@ def create_pt_application(
 ) -> PTApplication:
     """PT 신청서 생성 - 지점/수강권/락커/운동복 검증 → 저장 → 회원 LMS → 어드민 알림"""
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
-    _ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
+    pt_pass = ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
+    # 락커·운동복 무료제공 수강권은 별도 락커·운동복 선택 차단
+    assert_no_free_provided_conflict(
+        pt_pass, data.locker_pass_id, data.clothes_pass_id,
+    )
     if data.locker_pass_id is not None:
-        _ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+        ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
     if data.clothes_pass_id is not None:
-        _ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+        ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
 
     application = PTApplication(
         branch_id=data.branch_id,
@@ -96,13 +59,17 @@ def create_pt_application(
         phone=data.phone,
         address=data.address,
         referral=data.referral.value,
+        referral_detail=(data.referral_detail or "").strip() or None,
         payment_method=data.payment_method.value,
         final_price=data.final_price,
+        # 신규 PT 신청은 이번 결제 = 누적 동일
+        total_paid=data.final_price,
         start_date=data.start_date,
         end_date=data.end_date,
         motivation=data.motivation.value if data.motivation else None,
         notes=data.notes,
         agreed_notice=data.agreed_notice,
+        agreed_marketing=data.agreed_marketing,
     )
     db.add(application)
     db.commit()
@@ -215,14 +182,33 @@ def update_pt_application(
     """PT 신청 정보 수정 (Admin, 부분 수정)"""
     application = get_pt_application(db, application_id, current_admin)
 
+    # 수정 후 effective 수강권
     if data.pt_pass_id is not None:
-        _ensure_pt_pass_match(db, data.pt_pass_id, application.branch_id)
+        pt_pass = ensure_pt_pass_match(db, data.pt_pass_id, application.branch_id)
         application.pt_pass_id = data.pt_pass_id
+    else:
+        pt_pass = ensure_pt_pass_match(
+            db, application.pt_pass_id, application.branch_id,
+        )
+
+    # 무료제공 충돌 검사 - effective 락커·운동복 vs 수강권 provides_*
+    effective_locker_id = (
+        data.locker_pass_id if data.locker_pass_id is not None
+        else application.locker_pass_id
+    )
+    effective_clothes_id = (
+        data.clothes_pass_id if data.clothes_pass_id is not None
+        else application.clothes_pass_id
+    )
+    assert_no_free_provided_conflict(
+        pt_pass, effective_locker_id, effective_clothes_id,
+    )
+
     if data.locker_pass_id is not None:
-        _ensure_locker_pass_match(db, data.locker_pass_id, application.branch_id)
+        ensure_locker_pass_match(db, data.locker_pass_id, application.branch_id)
         application.locker_pass_id = data.locker_pass_id
     if data.clothes_pass_id is not None:
-        _ensure_clothes_pass_match(db, data.clothes_pass_id, application.branch_id)
+        ensure_clothes_pass_match(db, data.clothes_pass_id, application.branch_id)
         application.clothes_pass_id = data.clothes_pass_id
 
     if data.name is not None:
@@ -237,6 +223,9 @@ def update_pt_application(
         application.address = data.address
     if data.referral is not None:
         application.referral = data.referral.value
+    if data.referral_detail is not None:
+        cleaned = data.referral_detail.strip()
+        application.referral_detail = cleaned or None
     if data.payment_method is not None:
         application.payment_method = data.payment_method.value
     if data.final_price is not None:
@@ -249,6 +238,8 @@ def update_pt_application(
         application.motivation = data.motivation.value
     if data.notes is not None:
         application.notes = data.notes
+    if data.agreed_marketing is not None:
+        application.agreed_marketing = data.agreed_marketing
 
     db.commit()
     db.refresh(application)
@@ -276,3 +267,101 @@ def delete_pt_application(db: Session, application_id: UUID, current_admin: Admi
     db.delete(application)
     db.commit()
     logger.info("PT 신청 삭제 완료: application_id=%s", application_id)
+
+
+def re_register_pt_application(
+    db: Session,
+    data: PTApplicationReRegister,
+    background_tasks: BackgroundTasks | None = None,
+) -> PTApplication:
+    """PT 재등록 - 기존 PT 행 UPDATE + final_price 누적 + RE_REGISTERED 알림톡.
+
+    식별: branch_id + name + phone 셋 다 일치 (없으면 404, 다건이면 400).
+    """
+    branch = get_branch(db, data.branch_id)
+    new_pass = ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
+    assert_no_free_provided_conflict(
+        new_pass, data.locker_pass_id, data.clothes_pass_id,
+    )
+    if data.locker_pass_id is not None:
+        ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
+    if data.clothes_pass_id is not None:
+        ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+
+    matches = (
+        db.query(PTApplication)
+        .filter(
+            PTApplication.branch_id == data.branch_id,
+            PTApplication.name == data.name,
+            PTApplication.phone == data.phone,
+        )
+        .all()
+    )
+    if len(matches) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="재등록할 PT 신청 정보를 찾을 수 없습니다. 이름·전화번호를 확인해 주세요.",
+        )
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="동일 정보 PT 신청이 여러 건 있습니다. 어드민에 문의해 주세요.",
+        )
+    application = matches[0]
+
+    application.pt_pass_id = data.pt_pass_id
+    application.locker_pass_id = data.locker_pass_id
+    application.clothes_pass_id = data.clothes_pass_id
+    application.payment_method = data.payment_method.value
+    # 이번 결제는 final_price 덮어쓰기, 누적은 total_paid에 합산
+    application.final_price = data.final_price
+    application.total_paid = (application.total_paid or 0) + data.final_price
+    application.start_date = data.start_date
+    application.end_date = data.end_date
+    application.status = MemberStatus.REGISTERED.value
+    application.category = "EXISTING"
+    if data.agreed_marketing is not None:
+        application.agreed_marketing = data.agreed_marketing
+
+    db.commit()
+    db.refresh(application)
+
+    logger.info(
+        "PT 재등록 완료: application_id=%s, branch_id=%s, name=%s, phone=%s, "
+        "이번 결제=%s, 누적 결제=%s",
+        application.id, data.branch_id, data.name, mask_phone(data.phone),
+        application.final_price, application.total_paid,
+    )
+
+    try:
+        message_service.send_message(db, MessageSendRequest(
+            branch_id=data.branch_id,
+            source_type=MessageSourceType.PT_APPLICATION,
+            source_id=application.id,
+            trigger_type=TriggerType.RE_REGISTERED,
+            recipient=data.phone,
+            name=data.name,
+        ))
+    except Exception as e:
+        logger.error(
+            "PT 재등록 알림 발송 실패: application_id=%s, error=%s",
+            application.id, str(e),
+        )
+
+    try:
+        notification_service.notify_branch_event(
+            db,
+            branch_id=data.branch_id,
+            source_type=NotificationSourceType.PT_APPLICATION,
+            source_id=application.id,
+            title=f"PT 재등록 - {branch.name}",
+            body=f"{data.name}님이 PT 재등록했습니다.",
+            background_tasks=background_tasks,
+        )
+    except Exception as e:
+        logger.error(
+            "PT 재등록 어드민 알림 fan-out 실패: application_id=%s, error=%s",
+            application.id, str(e),
+        )
+
+    return application

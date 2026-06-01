@@ -13,18 +13,56 @@ from app.models.admin.admin import Admin
 from app.schemas.enums import MessageSourceType, MessageStatus, TriggerType
 from app.models.messaging.message import Message
 from app.schemas.messaging.message import MessageSendRequest
+from app.services.admin import system_config as system_config_service
 from app.services.branch import get_branch
 from app.services.messaging import message_templates, solapi
 from app.utils.masking import mask_phone
 
+
+def _get_messenger_info(db: Session, branch) -> tuple[str | None, str | None]:
+    """지점의 안부 메시지 발송자 이름·직책 조회. messenger_admin_id 없거나
+    admin이 사라졌으면 (None, None) → 시스템 양식으로 폴백.
+    """
+    if branch.messenger_admin_id is None:
+        return None, None
+    admin = db.query(Admin).filter(Admin.id == branch.messenger_admin_id).first()
+    if admin is None:
+        return None, None
+    return admin.name, admin.position
+
 logger = logging.getLogger(__name__)
 
-def send_message(db: Session, data: MessageSendRequest) -> Message:
-    """알림톡 발송 흐름: 지점 조회 → 양식 렌더링 → Solapi 발송 → 이력 저장"""
+def send_message(db: Session, data: MessageSendRequest) -> Message | None:
+    """알림톡 발송 흐름: 토글 확인 → 지점 조회 → 양식 렌더링 → Solapi 발송 → 이력 저장.
+
+    이중 토글 - 둘 다 true여야 발송:
+    - SystemConfig.messaging_enabled (전역 마스터, 비상 OFF용)
+    - Branch.messaging_enabled (지점별, 평소 운영용)
+
+    어느 한 쪽이라도 false면 발송·이력 저장 모두 스킵 (None 반환).
+    → 어드민 메시지 이력 화면에는 "발송 안 된 메시지" 자체가 안 뜸.
+    """
+    # 0-a. 전역 마스터 토글 확인
+    if not system_config_service.is_messaging_enabled(db):
+        logger.info(
+            "[DISABLED:GLOBAL] 알림톡 차단 - 전역 OFF: trigger=%s, recipient=%s",
+            data.trigger_type.value, mask_phone(data.recipient),
+        )
+        return None
+
     # 1. 지점 조회 (branch_name 치환 + branch_id 검증, 없으면 404)
     branch = get_branch(db, data.branch_id)
 
-    # 2. 트리거 양식 렌더링 (이름·지점정보 치환, body_override 있으면 우선)
+    # 0-b. 지점별 토글 확인 (전역 OK여도 지점 OFF면 차단)
+    if not branch.messaging_enabled:
+        logger.info(
+            "[DISABLED:BRANCH] 알림톡 차단 - 지점(%s) OFF: trigger=%s, recipient=%s",
+            branch.name, data.trigger_type.value, mask_phone(data.recipient),
+        )
+        return None
+
+    # 2. 트리거 양식 렌더링 (안부 트리거는 발송자 이름·직책 박힘, 시스템은 헤더+푸터)
+    sender_name, sender_position = _get_messenger_info(db, branch)
     content = message_templates.render_message(
         trigger=data.trigger_type.value,
         name=data.name,
@@ -32,16 +70,22 @@ def send_message(db: Session, data: MessageSendRequest) -> Message:
         branch_phone=branch.phone,
         naver_place_url=branch.naver_place_url,
         body_override=data.body_override,
+        sender_name=sender_name,
+        sender_position=sender_position,
     )
 
-    
-    # 3. Solapi 발송 (LMS 자동 제목 생성 막으려고 subject 빈 값 전달)
-    success, _error = solapi.send_sms(data.recipient, content, subject=f"{branch.name} 안내")
+    # 3. Solapi 발송 - 지점 번호를 발신자로 (Solapi에 등록된 번호여야 함)
+    success, _error = solapi.send_sms(
+        data.recipient,
+        content,
+        subject=f"{branch.name} 안내",
+        sender=branch.phone,
+    )
     msg_status = (
         MessageStatus.SUCCESS.value if success else MessageStatus.FAIL.value
     )
 
-    # 4. 이력 저장
+    # 4. 이력 저장 - 실제 발송 시도한 경우만 (성공·실패 모두 기록)
     message = Message(
         branch_id=data.branch_id,
         source_type=data.source_type.value,

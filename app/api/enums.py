@@ -5,6 +5,7 @@ from app.schemas.enums import (
     GENDER_LABELS,
     MOTIVATION_LABELS,
     PAYMENT_METHOD_LABELS,
+    POSITION_LABELS,
     REFERRAL_LABELS,
     SOURCE_TYPE_LABELS,
     TRIGGER_LABELS,
@@ -20,6 +21,7 @@ class EnumsResponse(BaseModel):
     motivation: list[EnumOption]
     trigger_type: list[EnumOption]
     source_type: list[EnumOption]
+    position: list[EnumOption]
 
 public_router = APIRouter(prefix="/enums", tags=["enums"])
 
@@ -33,4 +35,5 @@ def get_enums():
         motivation=to_options(MOTIVATION_LABELS),
         trigger_type=to_options(TRIGGER_LABELS),
         source_type=to_options(SOURCE_TYPE_LABELS),
+        position=to_options(POSITION_LABELS),
     )

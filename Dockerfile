@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini .
+COPY scripts/ ./scripts/
 
 # 비-root 유저로 실행 (보안)
 RUN useradd -m -u 1000 appuser

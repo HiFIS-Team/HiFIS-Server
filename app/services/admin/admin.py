@@ -18,15 +18,13 @@ from app.core.security import decode_token
 from app.models.admin.admin import Admin
 from app.models.admin.email_verification_token import EmailVerificationToken
 from app.schemas.admin.admin import (
-    AdminRole,
     AdminSelfUpdate,
     AdminSignup,
-    AdminStatus,
     LoginRequest,
     PasswordChangeRequest,
     TokenResponse,
 )
-from app.schemas.enums import NotificationSourceType
+from app.schemas.enums import AdminRole, AdminStatus, NotificationSourceType
 from app.services.admin import notification as notification_service
 from app.services.branch import ensure_branch_exists
 from app.models.admin.password_reset_token import PasswordResetToken
@@ -60,6 +58,7 @@ def signup(db: Session, data: AdminSignup) -> Admin:
         name=data.name,
         password_hash=hash_password(data.password),
         role=AdminRole.FC.value,
+        position=data.position.value,
         status=AdminStatus.PENDING_EMAIL.value,
         branch_id=data.branch_id,
     )
@@ -344,6 +343,9 @@ def login(db: Session, data: LoginRequest) -> TokenResponse:
 
     token = create_access_token(subject=str(admin.id))
     refresh = create_refresh_token(subject=str(admin.id))
+    # 로그인 시점에 last_seen_at 갱신 - 별도 heartbeat 오기 전부터 "접속중"으로 표시
+    admin.last_seen_at = datetime.now(KST)
+    db.commit()
     logger.info("관리자 로그인: admin_id=%s, email=%s", admin.id, admin.email)
     return TokenResponse(access_token=token, refresh_token=refresh, admin=admin)
 
@@ -382,9 +384,12 @@ def refresh_access_token(db: Session, refresh_token: str) -> TokenResponse:
         access_token=new_access, refresh_token=new_refresh, admin=admin
     )
 
-def list_admins(db: Session) -> list[Admin]:
-    """관리자 전체 목록 조회"""
-    return db.query(Admin).order_by(Admin.created_at.asc()).all()
+def list_admins(db: Session, branch_id: UUID | None = None) -> list[Admin]:
+    """관리자 목록 조회. branch_id 지정 시 해당 지점 소속 admin만 (발송자 변경 select용)."""
+    query = db.query(Admin).order_by(Admin.created_at.asc())
+    if branch_id is not None:
+        query = query.filter(Admin.branch_id == branch_id)
+    return query.all()
 
 def delete_admin(db: Session, admin_id: UUID) -> None:
     """FC 계정 삭제 (SUPER_ADMIN 전용) - SUPER_ADMIN 계정은 삭제 불가"""
@@ -425,4 +430,14 @@ def change_password(
     current_admin.password_hash = hash_password(data.new_password)
     db.commit()
     logger.info("관리자 비밀번호 변경: admin_id=%s", current_admin.id)
+
+
+def record_heartbeat(db: Session, current_admin: Admin) -> None:
+    """heartbeat - 현재 시각으로 last_seen_at 갱신.
+
+    프론트가 60초마다 호출 → SUPER_ADMIN 목록의 is_online 갱신.
+    1쿼리 1커밋이라 가벼움 (관리자 수가 적어 부하 무시 가능).
+    """
+    current_admin.last_seen_at = datetime.now(KST)
+    db.commit()
 
