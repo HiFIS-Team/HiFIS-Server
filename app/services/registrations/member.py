@@ -115,6 +115,18 @@ def create_member(
             member.id, str(e),
         )
 
+    # 외부 SaaS 자동 회원 등록 - 지점별 토글, BackgroundTasks 비동기, 실패해도 HiFIS 정상
+    # 둘 다 켜져 있으면 둘 다 호출 (이론상 가능, 현실은 지점당 1개만 ON)
+    if background_tasks is not None:
+        if branch.broj_enabled:
+            from app.services import broj as broj_service
+            background_tasks.add_task(broj_service.register_member, member)
+        if branch.dajim_enabled and branch.dajim_gym_id:
+            from app.services import dajim as dajim_service
+            background_tasks.add_task(
+                dajim_service.register_member, member, branch.dajim_gym_id,
+            )
+
     return member
 
 def list_members(

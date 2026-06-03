@@ -45,12 +45,27 @@ def _generate_code() -> str:
 
 
 def signup(db: Session, data: AdminSignup) -> Admin:
-    """FC 셀프 회원가입 - 계정 생성(PENDING_EMAIL) + 인증번호 메일 발송"""
-    if db.query(Admin).filter(Admin.email == data.email).first() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="이미 사용중인 이메일입니다.",
-        )
+    """FC 셀프 회원가입 - 계정 생성(PENDING_EMAIL) + 인증번호 메일 발송.
+
+    같은 이메일 row가 이미 있는 경우:
+    - PENDING_EMAIL (인증 중도 이탈) → 옛 row 자동 정리 후 새로 INSERT
+      → EmailVerificationToken은 FK CASCADE로 함께 삭제됨
+    - 그 외(PENDING_APPROVAL/ACTIVE) → 409 (정상 거부)
+    """
+    existing = db.query(Admin).filter(Admin.email == data.email).first()
+    if existing is not None:
+        if existing.status == AdminStatus.PENDING_EMAIL.value:
+            logger.info(
+                "재가입 시도 - 옛 PENDING_EMAIL row 정리: admin_id=%s, email=%s",
+                existing.id, existing.email,
+            )
+            db.delete(existing)
+            db.flush()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="이미 사용중인 이메일입니다.",
+            )
     ensure_branch_exists(db, data.branch_id)
 
     admin = Admin(

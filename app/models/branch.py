@@ -29,6 +29,20 @@ class Branch(Base):
     messaging_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false",
     )
+    # 브로제이(BroJ) 자동 회원 등록 - 회원가입 직후 BackgroundTasks로 브로제이에도 INSERT
+    # 화순점만 운영 중. 나머지 지점은 false 유지.
+    broj_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false",
+    )
+    # 다짐(Dagym) 자동 회원 등록 - 첨단점·동광주점 대상
+    # 브로제이와 독립. 둘 다 켜져 있으면 둘 다 호출.
+    dajim_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false",
+    )
+    # 다짐 GYM_ID - 지점별 다름. dajim_enabled=True인 지점만 채움 (NULL이면 등록 스킵)
+    dajim_gym_id: Mapped[str | None] = mapped_column(
+        String(50), nullable=True,
+    )
     # 안부 메시지(D+N, 만기 안내 등) 발송자로 고정될 admin - 없으면 시스템 양식으로 폴백
     # use_alter=True: admins ↔ branches 순환 FK라 별도 ALTER TABLE로 추가 (drop 시 cycle 해결)
     messenger_admin_id: Mapped[UUID | None] = mapped_column(
