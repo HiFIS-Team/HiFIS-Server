@@ -63,7 +63,7 @@ def _recalc_source_status(
     ).first()
     if remaining is not None:
         target.status = MemberStatus.HELD.value
-    elif today >= target.end_date:
+    elif today > target.end_date:
         target.status = MemberStatus.EXPIRED.value
     else:
         target.status = MemberStatus.REGISTERED.value
@@ -73,8 +73,9 @@ def _refund_and_delete_hold(
     db: Session, hold: Hold, target, today,
 ) -> dict:
     """Hold 1건의 환원 일수 계산 + end_date 조정 + 삭제. 알림톡용 정보 캡처해서 반환."""
-    planned_days = (hold.end_date - hold.start_date).days
-    actual_days = max(0, (min(today, hold.end_date) - hold.start_date).days)
+    # end_date inclusive 의미로 일관 - 6/1~6/3 (3일)이면 3, 시작 전 취소면 0
+    planned_days = (hold.end_date - hold.start_date).days + 1
+    actual_days = max(0, (min(today, hold.end_date) - hold.start_date).days + 1)
     refund_days = planned_days - actual_days
 
     target.end_date = target.end_date - timedelta(days=refund_days)
@@ -126,7 +127,8 @@ def create_hold(db: Session, data: HoldCreate, current_admin: Admin) -> Hold:
     target = _get_target(db, data.source_type, data.source_id)
     assert_branch_access(current_admin, target.branch_id)
 
-    hold_days = (data.end_date - data.start_date).days
+    # end_date inclusive - 6/1~6/3 입력이면 3일 연장, 알림톡 본문도 "3일"로 표시
+    hold_days = (data.end_date - data.start_date).days + 1
 
     # 1. 홀딩 기록 저장 + 만기일 연장 + 상태 HELD
     hold = Hold(

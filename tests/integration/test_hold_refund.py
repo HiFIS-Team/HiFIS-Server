@@ -53,9 +53,10 @@ class TestCreateHold:
         )
         assert res.status_code in (200, 201), res.text
 
-        # 만기일 연장 확인
+        # 만기일 연장 확인 - end_date inclusive: (end-start).days + 1
+        # today ~ today+10 입력은 11일 (start·end 둘 다 포함) → +11일 연장
         db.refresh(registered_member)
-        assert registered_member.end_date == original_end + timedelta(days=hold_days)
+        assert registered_member.end_date == original_end + timedelta(days=hold_days + 1)
 
         # 홀딩 row 저장 확인
         hold = db.query(Hold).filter(Hold.source_id == registered_member.id).first()
@@ -65,15 +66,21 @@ class TestCreateHold:
 
 class TestCancelHold:
 
-    def test_cancel_hold_immediately_full_refund(
+    def test_cancel_hold_before_start_full_refund(
         self, client, db, auth_super, registered_member,
     ):
-        """홀딩 생성 직후(같은 날) 취소 → 환불 일수 = 전체, 만기일은 원복"""
+        """홀딩 시작 전(예약된 상태)에 취소 → 환불 일수 = 전체, 만기일은 원복
+
+        inclusive 의미상 시작일은 1일째 사용으로 카운트되므로 "즉시 취소"는
+        시작 전에만 0일 사용 = full refund. 시작일 당일 취소는 1일은 사용한
+        걸로 처리됨 (운영 정책으로 사장님께 안내).
+        """
         today = date.today()
         original_end = registered_member.end_date
-        hold_days = 10
 
-        # 1. 홀딩 생성 (10일 연장됨)
+        # 1. 홀딩을 내일~다음주로 신청 (오늘 풀면 시작 전)
+        start = today + timedelta(days=1)
+        end = today + timedelta(days=7)
         create_res = client.post(
             "/admin/holds",
             headers=auth_super,
@@ -81,14 +88,14 @@ class TestCancelHold:
                 "source_type": "MEMBER",
                 "source_id": str(registered_member.id),
                 "reason": "출장",
-                "start_date": str(today),
-                "end_date": str(today + timedelta(days=hold_days)),
+                "start_date": str(start),
+                "end_date": str(end),
             },
         )
         assert create_res.status_code in (200, 201)
         hold_id = create_res.json()["id"]
 
-        # 2. 즉시 취소 (today == start_date → 실제 0일 쉼, 10일 환원)
+        # 2. 오늘(시작 전) 취소 → 0일 사용 → full refund
         cancel_res = client.delete(
             f"/admin/holds/{hold_id}",
             headers=auth_super,
