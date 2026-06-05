@@ -191,4 +191,5 @@ class MemberResponse(BaseModel):
     agreed_marketing: bool
     status: MemberStatus
     category: MemberCategory  # NEW(신규) / EXISTING(재등록)
+    signature_url: str | None  # 다짐 지점만 채워짐, 그 외 NULL
     created_at: datetime

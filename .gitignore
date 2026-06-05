@@ -9,6 +9,9 @@ __pycache__/
 # 개인 노트 / 배포 메모 (Git 미추적)
 docs/
 
+# 회원 전자서명 PNG (운영 데이터, 별도 백업으로 보관)
+uploads/
+
 # C extensions
 *.so
 

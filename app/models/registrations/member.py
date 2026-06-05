@@ -83,6 +83,10 @@ class Member(Base):
         default="NEW",
     )
 
+    # 전자서명 PNG 경로 (다짐 지점만 채워짐, 그 외 NULL)
+    # 예: '/uploads/signatures/<uuid>.png' — StaticFiles로 노출
+    signature_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -36,8 +36,13 @@ def create_member(
     db: Session,
     data: MemberCreate,
     background_tasks: BackgroundTasks | None = None,
+    signature_url: str | None = None,
 ) -> Member:
-    """회원가입 신청서 생성 - 지점/회원권 검증 → 저장 → 회원 LMS → 어드민 알림"""
+    """회원가입 신청서 생성 - 지점/회원권 검증 → 저장 → 회원 LMS → 어드민 알림.
+
+    signature_url: 다짐 지점에서 multipart로 받은 전자서명 PNG 저장 경로.
+    일반 지점은 None으로 그대로 NULL 저장.
+    """
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
     membership_pass = ensure_membership_pass_match(
         db, data.membership_pass_id, data.branch_id,
@@ -73,6 +78,7 @@ def create_member(
         motivation=data.motivation.value,
         agreed_terms=data.agreed_terms,
         agreed_marketing=data.agreed_marketing,
+        signature_url=signature_url,
     )
     db.add(member)
     db.commit()
@@ -285,6 +291,7 @@ def re_register_member(
     db: Session,
     data: MemberReRegister,
     background_tasks: BackgroundTasks | None = None,
+    signature_url: str | None = None,
 ) -> Member:
     """재등록 - 기존 회원 행 UPDATE + final_price 누적 + 알림톡 RE_REGISTERED
 
@@ -343,6 +350,9 @@ def re_register_member(
     member.category = "EXISTING"
     if data.agreed_marketing is not None:
         member.agreed_marketing = data.agreed_marketing
+    # 재등록 시 새 서명을 받으면 갱신, 없으면 옛 값 유지 (NULL이면 그대로 NULL)
+    if signature_url is not None:
+        member.signature_url = signature_url
 
     db.commit()
     db.refresh(member)
