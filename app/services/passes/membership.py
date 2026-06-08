@@ -9,12 +9,16 @@ from app.models.admin.admin import Admin
 from app.models.passes.membership import MembershipPass
 from app.schemas.passes.membership import MembershipPassCreate, MembershipPassUpdate
 from app.services.branch import ensure_branch_exists
+from app.services.passes._validators import assert_single_duration_unit
 
 
 def create_membership_pass(db: Session, data: MembershipPassCreate, current_admin: Admin) -> MembershipPass:
     """회원권 등록 - 지점 존재 검증 후 저장"""
     assert_branch_access(current_admin, data.branch_id)
     ensure_branch_exists(db, data.branch_id)
+    assert_single_duration_unit(
+        data.duration_months, data.duration_days, data.duration_hours,
+    )
 
     pass_obj = MembershipPass(
         branch_id=data.branch_id,
@@ -22,6 +26,8 @@ def create_membership_pass(db: Session, data: MembershipPassCreate, current_admi
         cash_price=data.cash_price,
         card_price=data.card_price,
         duration_months=data.duration_months,
+        duration_days=data.duration_days,
+        duration_hours=data.duration_hours,
         provides_locker=data.provides_locker,
         provides_clothes=data.provides_clothes,
     )
@@ -81,7 +87,15 @@ def update_membership_pass(
     pass_obj = get_membership_pass(db, pass_id)
     assert_branch_access(current_admin, pass_obj.branch_id)
 
-    for field, value in data.model_dump(exclude_unset=True).items():
+    update_dict = data.model_dump(exclude_unset=True)
+    # 적용 후 (months, days, hours) 가 최대 1개만 non-null 인지 검증.
+    # dict.get(key, default) 가 "key 존재 + 값이 None" 케이스도 None 으로 반환 → 명시적 clear 반영.
+    assert_single_duration_unit(
+        update_dict.get("duration_months", pass_obj.duration_months),
+        update_dict.get("duration_days", pass_obj.duration_days),
+        update_dict.get("duration_hours", pass_obj.duration_hours),
+    )
+    for field, value in update_dict.items():
         setattr(pass_obj, field, value)
 
     db.commit()

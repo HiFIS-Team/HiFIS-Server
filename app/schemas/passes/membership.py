@@ -9,10 +9,11 @@ class MembershipPassCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     cash_price: int = Field(..., ge=0, description="현금가 (원)")
     card_price: int = Field(..., ge=0, description="카드가 (원)")
-    duration_months: int | None = Field(
-        default=None, ge=1, le=120,
-        description="이용 기간 (개월). 1·3·6·12 등. 일권·2주권은 NULL → 프론트 직접 입력",
-    )
+    # 이용 기간 — (months, days, hours) 중 최대 하나만. 서비스 레이어에서 검증.
+    # 셋 다 NULL 이면 프론트가 이름에서 추출(fallback).
+    duration_months: int | None = Field(default=None, ge=1, le=120)
+    duration_days: int | None = Field(default=None, ge=1, le=365)
+    duration_hours: int | None = Field(default=None, ge=1, le=23)
     provides_locker: bool = Field(
         default=False, description="락커 무료제공 - 신청 시 별도 락커 선택 차단",
     )
@@ -26,6 +27,8 @@ class MembershipPassUpdate(BaseModel):
     cash_price: int | None = Field(default=None, ge=0)
     card_price: int | None = Field(default=None, ge=0)
     duration_months: int | None = Field(default=None, ge=1, le=120)
+    duration_days: int | None = Field(default=None, ge=1, le=365)
+    duration_hours: int | None = Field(default=None, ge=1, le=23)
     provides_locker: bool | None = None
     provides_clothes: bool | None = None
 
@@ -39,6 +42,8 @@ class MembershipPassResponse(BaseModel):
     cash_price: int
     card_price: int
     duration_months: int | None
+    duration_days: int | None
+    duration_hours: int | None
     provides_locker: bool
     provides_clothes: bool
     created_at: datetime

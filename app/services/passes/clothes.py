@@ -9,18 +9,24 @@ from app.models.passes.clothes import ClothesPass
 from app.models.registrations.member import Member
 from app.schemas.passes.clothes import ClothesPassCreate, ClothesPassUpdate
 from app.services.branch import ensure_branch_exists
+from app.services.passes._validators import assert_single_duration_unit
 
 
 def create_clothes_pass(db: Session, data: ClothesPassCreate, current_admin: Admin) -> ClothesPass:
     """운동복 상품 등록"""
     assert_branch_access(current_admin, data.branch_id)
     ensure_branch_exists(db, data.branch_id)
+    assert_single_duration_unit(
+        data.duration_months, data.duration_days, data.duration_hours,
+    )
     pass_obj = ClothesPass(
         branch_id=data.branch_id,
         name=data.name,
         cash_price=data.cash_price,
         card_price=data.card_price,
         duration_months=data.duration_months,
+        duration_days=data.duration_days,
+        duration_hours=data.duration_hours,
         provides_locker=data.provides_locker,
     )
     db.add(pass_obj)
@@ -60,7 +66,13 @@ def update_clothes_pass(
     """운동복 상품 수정 (부분 수정 - membership 와 동일 패턴)."""
     pass_obj = get_clothes_pass(db, pass_id)
     assert_branch_access(current_admin, pass_obj.branch_id)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    update_dict = data.model_dump(exclude_unset=True)
+    assert_single_duration_unit(
+        update_dict.get("duration_months", pass_obj.duration_months),
+        update_dict.get("duration_days", pass_obj.duration_days),
+        update_dict.get("duration_hours", pass_obj.duration_hours),
+    )
+    for field, value in update_dict.items():
         setattr(pass_obj, field, value)
     db.commit()
     db.refresh(pass_obj)

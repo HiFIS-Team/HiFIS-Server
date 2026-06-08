@@ -24,8 +24,14 @@ class MembershipPass(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     cash_price: Mapped[int] = mapped_column(Integer, nullable=False)
     card_price: Mapped[int] = mapped_column(Integer, nullable=False)
-    # 이용 기간 (개월). 1·3·6·12 등. 일권·2주권 같은 예외는 NULL → 프론트가 직접 입력
+    # 이용 기간 — (months, days, hours) 중 최대 하나만 채워짐.
+    #   개월권 → duration_months (1~120)
+    #   일권·3+1권   → duration_days   (1~365)
+    #   N시간권     → duration_hours  (1~23, 당일 만료)
+    # 모두 NULL 이면 프론트가 이름에서 추출(fallback). 서비스 레이어가 1개 이하 검증.
     duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # 회원권에 락커·운동복이 포함되어 있으면 True - 신청 시 별도 선택 차단, 가격 합산 제외
     provides_locker: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false",
