@@ -38,6 +38,9 @@ services:
       HIFIS_DB_HOST: db
     env_file:
       - .env                # 나머지 환경변수는 .env 그대로 사용
+    # 전자서명 PNG 영속화 - 컨테이너 재기동에도 살아남음. 백업은 scripts/backup_db.sh에서 함께 처리.
+    volumes:
+      - ./uploads:/app/uploads
     ports:
       - "8000:8000"
     # 마이그레이션 자동 실행 후 서버 시작

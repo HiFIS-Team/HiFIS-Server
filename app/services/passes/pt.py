@@ -9,12 +9,16 @@ from app.models.admin.admin import Admin
 from app.models.passes.pt import PTPass
 from app.schemas.passes.pt import PTPassCreate, PTPassUpdate
 from app.services.branch import ensure_branch_exists
+from app.services.passes._validators import assert_single_duration_unit
 
 
 def create_pt_pass(db: Session, data: PTPassCreate, current_admin: Admin) -> PTPass:
     """수강권 등록 - 지점 존재 검증 후 저장"""
     assert_branch_access(current_admin, data.branch_id)
     ensure_branch_exists(db, data.branch_id)
+    assert_single_duration_unit(
+        data.duration_months, data.duration_days, data.duration_hours,
+    )
 
     pass_obj = PTPass(
         branch_id=data.branch_id,
@@ -22,6 +26,8 @@ def create_pt_pass(db: Session, data: PTPassCreate, current_admin: Admin) -> PTP
         cash_price=data.cash_price,
         card_price=data.card_price,
         duration_months=data.duration_months,
+        duration_days=data.duration_days,
+        duration_hours=data.duration_hours,
         provides_locker=data.provides_locker,
         provides_clothes=data.provides_clothes,
     )
@@ -63,22 +69,18 @@ def get_pt_pass(db: Session, pass_id: UUID) -> PTPass:
     return pass_obj
 
 def update_pt_pass(db: Session, pass_id: UUID, data: PTPassUpdate, current_admin: Admin,) -> PTPass:
-    """수강권 정보 수정 (부분 수정)"""
+    """수강권 정보 수정 (부분 수정 - membership 와 동일 패턴)."""
     pass_obj = get_pt_pass(db, pass_id)
     assert_branch_access(current_admin, pass_obj.branch_id)
 
-    if data.name is not None:
-        pass_obj.name = data.name
-    if data.cash_price is not None:
-        pass_obj.cash_price = data.cash_price
-    if data.card_price is not None:
-        pass_obj.card_price = data.card_price
-    if data.duration_months is not None:
-        pass_obj.duration_months = data.duration_months
-    if data.provides_locker is not None:
-        pass_obj.provides_locker = data.provides_locker
-    if data.provides_clothes is not None:
-        pass_obj.provides_clothes = data.provides_clothes
+    update_dict = data.model_dump(exclude_unset=True)
+    assert_single_duration_unit(
+        update_dict.get("duration_months", pass_obj.duration_months),
+        update_dict.get("duration_days", pass_obj.duration_days),
+        update_dict.get("duration_hours", pass_obj.duration_hours),
+    )
+    for field, value in update_dict.items():
+        setattr(pass_obj, field, value)
 
     db.commit()
     db.refresh(pass_obj)

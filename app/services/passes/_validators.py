@@ -67,6 +67,26 @@ def ensure_clothes_pass_match(
     return _ensure_pass_match(db, ClothesPass, pass_id, branch_id, "운동복 상품")
 
 
+def assert_single_duration_unit(
+    duration_months: int | None,
+    duration_days: int | None,
+    duration_hours: int | None,
+) -> None:
+    """한 상품은 (개월, 일, 시간) 중 최대 하나의 단위만 가질 수 있음.
+
+    Pydantic 의 single-field 검증으론 cross-field 검사를 못 해서 여기서 처리.
+    셋 다 NULL 도 허용 — 그 경우 프론트가 상품명에서 기간 추출(fallback).
+    """
+    set_count = sum(
+        1 for v in (duration_months, duration_days, duration_hours) if v is not None
+    )
+    if set_count > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이용 기간은 개월·일·시간 중 한 가지 단위로만 입력해 주세요.",
+        )
+
+
 def assert_no_free_provided_conflict(
     pass_obj,
     locker_pass_id: UUID | None,

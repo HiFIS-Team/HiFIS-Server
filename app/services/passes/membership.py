@@ -9,12 +9,16 @@ from app.models.admin.admin import Admin
 from app.models.passes.membership import MembershipPass
 from app.schemas.passes.membership import MembershipPassCreate, MembershipPassUpdate
 from app.services.branch import ensure_branch_exists
+from app.services.passes._validators import assert_single_duration_unit
 
 
 def create_membership_pass(db: Session, data: MembershipPassCreate, current_admin: Admin) -> MembershipPass:
     """회원권 등록 - 지점 존재 검증 후 저장"""
     assert_branch_access(current_admin, data.branch_id)
     ensure_branch_exists(db, data.branch_id)
+    assert_single_duration_unit(
+        data.duration_months, data.duration_days, data.duration_hours,
+    )
 
     pass_obj = MembershipPass(
         branch_id=data.branch_id,
@@ -22,6 +26,8 @@ def create_membership_pass(db: Session, data: MembershipPassCreate, current_admi
         cash_price=data.cash_price,
         card_price=data.card_price,
         duration_months=data.duration_months,
+        duration_days=data.duration_days,
+        duration_hours=data.duration_hours,
         provides_locker=data.provides_locker,
         provides_clothes=data.provides_clothes,
     )
@@ -66,27 +72,31 @@ def get_membership_pass(db: Session, pass_id: UUID) -> MembershipPass:
     return pass_obj
 
 def update_membership_pass(
-        db: Session, 
-        pass_id: UUID, 
+        db: Session,
+        pass_id: UUID,
         data: MembershipPassUpdate,
         current_admin: Admin,
 ) -> MembershipPass:
-    """회원권 정보 수정 (부분 수정)"""
+    """회원권 정보 수정 (부분 수정).
+
+    `model_dump(exclude_unset=True)` 로 프론트가 명시적으로 보낸 필드만 추출 →
+    setattr 적용. 이렇게 해야 클라이언트가 `duration_months: null` 처럼 명시적으로
+    None 을 보낸 경우도 "값을 비우는" 의도로 정확히 반영된다.
+    (이전엔 `if x is not None: ...` 패턴이라 None clear 가 무시됐음.)
+    """
     pass_obj = get_membership_pass(db, pass_id)
     assert_branch_access(current_admin, pass_obj.branch_id)
 
-    if data.name is not None:
-        pass_obj.name = data.name
-    if data.cash_price is not None:
-        pass_obj.cash_price = data.cash_price
-    if data.card_price is not None:
-        pass_obj.card_price = data.card_price
-    if data.duration_months is not None:
-        pass_obj.duration_months = data.duration_months
-    if data.provides_locker is not None:
-        pass_obj.provides_locker = data.provides_locker
-    if data.provides_clothes is not None:
-        pass_obj.provides_clothes = data.provides_clothes
+    update_dict = data.model_dump(exclude_unset=True)
+    # 적용 후 (months, days, hours) 가 최대 1개만 non-null 인지 검증.
+    # dict.get(key, default) 가 "key 존재 + 값이 None" 케이스도 None 으로 반환 → 명시적 clear 반영.
+    assert_single_duration_unit(
+        update_dict.get("duration_months", pass_obj.duration_months),
+        update_dict.get("duration_days", pass_obj.duration_days),
+        update_dict.get("duration_hours", pass_obj.duration_hours),
+    )
+    for field, value in update_dict.items():
+        setattr(pass_obj, field, value)
 
     db.commit()
     db.refresh(pass_obj)

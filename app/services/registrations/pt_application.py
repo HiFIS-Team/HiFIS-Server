@@ -35,8 +35,13 @@ def create_pt_application(
     db: Session,
     data: PTApplicationCreate,
     background_tasks: BackgroundTasks | None = None,
+    signature_url: str | None = None,
 ) -> PTApplication:
-    """PT 신청서 생성 - 지점/수강권/락커/운동복 검증 → 저장 → 회원 LMS → 어드민 알림"""
+    """PT 신청서 생성 - 지점/수강권/락커/운동복 검증 → 저장 → 회원 LMS → 어드민 알림.
+
+    signature_url: 다짐 지점에서 multipart로 받은 전자서명 PNG 저장 경로.
+    일반 지점은 None으로 그대로 NULL 저장.
+    """
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
     pt_pass = ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
     # 락커·운동복 무료제공 수강권은 별도 락커·운동복 선택 차단
@@ -70,6 +75,7 @@ def create_pt_application(
         notes=data.notes,
         agreed_notice=data.agreed_notice,
         agreed_marketing=data.agreed_marketing,
+        signature_url=signature_url,
     )
     db.add(application)
     db.commit()
@@ -273,6 +279,7 @@ def re_register_pt_application(
     db: Session,
     data: PTApplicationReRegister,
     background_tasks: BackgroundTasks | None = None,
+    signature_url: str | None = None,
 ) -> PTApplication:
     """PT 재등록 - 기존 PT 행 UPDATE + final_price 누적 + RE_REGISTERED 알림톡.
 
@@ -322,6 +329,9 @@ def re_register_pt_application(
     application.category = "EXISTING"
     if data.agreed_marketing is not None:
         application.agreed_marketing = data.agreed_marketing
+    # 재등록 시 새 서명을 받으면 갱신, 없으면 옛 값 유지
+    if signature_url is not None:
+        application.signature_url = signature_url
 
     db.commit()
     db.refresh(application)

@@ -1,4 +1,6 @@
 """POST /members 통합 테스트 - DB row 생성, 메시지 이력 저장, FK 검증"""
+from pathlib import Path
+
 import pytest
 
 from app.models.messaging.message import Message
@@ -6,6 +8,15 @@ from app.models.passes.clothes import ClothesPass
 from app.models.passes.locker import LockerPass
 from app.models.passes.membership import MembershipPass
 from app.models.registrations.member import Member
+
+
+@pytest.fixture(autouse=True)
+def isolated_signature_dir(tmp_path, monkeypatch):
+    """서명 PNG 저장 디렉토리를 테스트별 tmp로 분리. 실제 uploads/ 오염 방지."""
+    sig_dir = tmp_path / "signatures"
+    sig_dir.mkdir()
+    monkeypatch.setattr("app.services.storage.SIGNATURE_DIR", sig_dir)
+    yield sig_dir
 
 
 @pytest.fixture
@@ -139,3 +150,96 @@ class TestCreateMember:
             json=_member_payload(branch, membership_pass, phone="abc"),
         )
         assert res.status_code == 422
+
+    def test_create_member_json_signature_none(
+        self, client, db, branch, membership_pass,
+    ):
+        """일반 지점(JSON 본문): signature_url = NULL로 저장"""
+        res = client.post(
+            "/members",
+            json=_member_payload(
+                branch, membership_pass, phone="01099112233",
+            ),
+        )
+        assert res.status_code == 201, res.text
+        assert res.json()["signature_url"] is None
+        member = db.query(Member).filter(Member.phone == "01099112233").first()
+        assert member.signature_url is None
+
+    def test_create_member_multipart_with_signature(
+        self, client, db, branch, membership_pass, isolated_signature_dir,
+    ):
+        """다짐 지점(multipart): signature_url 채워짐 + 파일 디스크 저장"""
+        import json
+
+        payload = _member_payload(
+            branch, membership_pass, phone="01088991122",
+        )
+        png_bytes = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\x00"
+            b"\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        res = client.post(
+            "/members",
+            data={"payload": json.dumps(payload)},
+            files={"signature": ("sig.png", png_bytes, "image/png")},
+        )
+        assert res.status_code == 201, res.text
+        signature_url = res.json()["signature_url"]
+        assert signature_url is not None
+        assert signature_url.startswith("/uploads/signatures/")
+        assert signature_url.endswith(".png")
+        # 디스크 저장 확인 (isolated_signature_dir로 분리됨)
+        filename = signature_url.split("/")[-1]
+        assert (isolated_signature_dir / filename).exists()
+
+    def test_create_member_multipart_no_signature(
+        self, client, db, branch, membership_pass,
+    ):
+        """multipart인데 signature 누락: 백엔드는 받아주되 signature_url=None
+        (프론트가 validate 책임)"""
+        import json
+        payload = _member_payload(
+            branch, membership_pass, phone="01077665544",
+        )
+        # files dict의 None 값 트릭 - httpx가 multipart로 강제 인코딩
+        res = client.post(
+            "/members",
+            files={"payload": (None, json.dumps(payload))},
+        )
+        assert res.status_code == 201, res.text
+        assert res.json()["signature_url"] is None
+
+    def test_create_member_multipart_non_png_400(
+        self, client, branch, membership_pass,
+    ):
+        """multipart인데 PNG 외 content_type → 400"""
+        import json
+        payload = _member_payload(
+            branch, membership_pass, phone="01066554433",
+        )
+        res = client.post(
+            "/members",
+            data={"payload": json.dumps(payload)},
+            files={"signature": ("sig.jpg", b"fakejpg", "image/jpeg")},
+        )
+        assert res.status_code == 400
+        assert "PNG" in res.json()["detail"]
+
+    def test_create_member_multipart_oversize_400(
+        self, client, branch, membership_pass,
+    ):
+        """multipart 서명이 1MB 초과 → 400"""
+        import json
+        payload = _member_payload(
+            branch, membership_pass, phone="01055443322",
+        )
+        big = b"\x89PNG" + b"\x00" * (1024 * 1024 + 100)  # 1MB + 알파
+        res = client.post(
+            "/members",
+            data={"payload": json.dumps(payload)},
+            files={"signature": ("big.png", big, "image/png")},
+        )
+        assert res.status_code == 400
+        assert "크기" in res.json()["detail"]

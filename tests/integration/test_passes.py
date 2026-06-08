@@ -69,6 +69,141 @@ class TestMembershipPassCRUD:
         assert res.status_code == 200
         assert res.json()["cash_price"] == 95000
 
+    def test_update_duration_months_change(self, client, db, auth_super, branch):
+        """duration_months 값 변경 (3 → 6) 이 정상 반영돼야 함"""
+        p = MembershipPass(
+            branch_id=branch.id, name="3개월",
+            cash_price=270000, card_price=300000, duration_months=3,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        res = client.patch(
+            f"/admin/membership-passes/{p.id}",
+            headers=auth_super,
+            json={"duration_months": 6},
+        )
+        assert res.status_code == 200, res.text
+        assert res.json()["duration_months"] == 6
+        db.refresh(p)
+        assert p.duration_months == 6
+
+    def test_update_duration_months_clear_to_null(self, client, db, auth_super, branch):
+        """duration_months 명시적 null 도 반영 — 비우기 의도 보존.
+
+        이전 `if x is not None: ...` 패턴에선 null clear 가 무시되던 버그 회귀 방지.
+        """
+        p = MembershipPass(
+            branch_id=branch.id, name="일권",
+            cash_price=10000, card_price=12000, duration_months=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        res = client.patch(
+            f"/admin/membership-passes/{p.id}",
+            headers=auth_super,
+            json={"duration_months": None},
+        )
+        assert res.status_code == 200, res.text
+        assert res.json()["duration_months"] is None
+        db.refresh(p)
+        assert p.duration_months is None
+
+    def test_update_omit_field_keeps_value(self, client, db, auth_super, branch):
+        """필드 누락(send 안 함) 시 기존 값 유지 — 진짜 부분 수정."""
+        p = MembershipPass(
+            branch_id=branch.id, name="3개월",
+            cash_price=270000, card_price=300000, duration_months=3,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        # cash_price 만 변경, duration_months 는 페이로드에 안 들어감
+        res = client.patch(
+            f"/admin/membership-passes/{p.id}",
+            headers=auth_super,
+            json={"cash_price": 280000},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["cash_price"] == 280000
+        assert body["duration_months"] == 3  # 그대로 유지
+
+    def test_create_with_duration_days(self, client, auth_super, branch):
+        """일권 등록 — duration_days 만 채움"""
+        res = client.post(
+            "/admin/membership-passes",
+            headers=auth_super,
+            json={
+                "branch_id": str(branch.id), "name": "7일권",
+                "cash_price": 30000, "card_price": 33000,
+                "duration_days": 7,
+            },
+        )
+        assert res.status_code == 201, res.text
+        body = res.json()
+        assert body["duration_days"] == 7
+        assert body["duration_months"] is None
+        assert body["duration_hours"] is None
+
+    def test_create_with_duration_hours(self, client, auth_super, branch):
+        """시간권 등록 — duration_hours 만 채움"""
+        res = client.post(
+            "/admin/membership-passes",
+            headers=auth_super,
+            json={
+                "branch_id": str(branch.id), "name": "3시간권",
+                "cash_price": 10000, "card_price": 12000,
+                "duration_hours": 3,
+            },
+        )
+        assert res.status_code == 201, res.text
+        body = res.json()
+        assert body["duration_hours"] == 3
+        assert body["duration_months"] is None
+        assert body["duration_days"] is None
+
+    def test_create_two_units_rejected(self, client, auth_super, branch):
+        """months 와 days 둘 다 보내면 400 — 한 단위만 허용"""
+        res = client.post(
+            "/admin/membership-passes",
+            headers=auth_super,
+            json={
+                "branch_id": str(branch.id), "name": "혼합",
+                "cash_price": 100000, "card_price": 110000,
+                "duration_months": 1, "duration_days": 7,
+            },
+        )
+        assert res.status_code == 400, res.text
+        assert "한 가지 단위" in res.json()["detail"]
+
+    def test_update_switch_unit_clears_other(self, client, db, auth_super, branch):
+        """개월 → 일 단위 전환 시 기존 개월값을 명시적 null 로 비워야 통과."""
+        p = MembershipPass(
+            branch_id=branch.id, name="기존 1개월",
+            cash_price=100000, card_price=110000, duration_months=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        res = client.patch(
+            f"/admin/membership-passes/{p.id}",
+            headers=auth_super,
+            json={"duration_months": None, "duration_days": 7},
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["duration_months"] is None
+        assert body["duration_days"] == 7
+
+    def test_update_conflict_rejected(self, client, db, auth_super, branch):
+        """기존에 months 가 있는데 days 만 보내면 (months 그대로) → 두 단위 충돌 → 400."""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월",
+            cash_price=100000, card_price=110000, duration_months=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        res = client.patch(
+            f"/admin/membership-passes/{p.id}",
+            headers=auth_super,
+            json={"duration_days": 7},  # months 는 그대로 1
+        )
+        assert res.status_code == 400, res.text
+        assert "한 가지 단위" in res.json()["detail"]
+
     def test_delete(self, client, db, auth_super, branch):
         """미사용 회원권 삭제 → 204"""
         p = MembershipPass(

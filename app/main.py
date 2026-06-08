@@ -5,6 +5,7 @@ from app.services.messaging.scheduler import start_scheduler, stop_scheduler
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -112,6 +113,10 @@ app.include_router(locker_pass_api.public_router)
 app.include_router(locker_pass_api.admin_router)
 app.include_router(clothes_pass_api.public_router)
 app.include_router(clothes_pass_api.admin_router)
+
+# 전자서명 PNG 정적 서빙 - /uploads/signatures/<uuid>.png
+# 디렉토리는 services/storage.py가 import 시 자동 생성
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/")
 def read_root():

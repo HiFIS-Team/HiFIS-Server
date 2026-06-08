@@ -1,7 +1,7 @@
 from uuid import UUID
 from datetime import date
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
@@ -17,36 +17,93 @@ from app.schemas.registrations.pt_application import (
 )
 from app.schemas.enums import MemberStatus
 from app.services.registrations import pt_application as pt_application_service
+from app.services.storage import MAX_SIGNATURE_BYTES, save_signature
+from pydantic import ValidationError
 
 # Public - PT 신청서 제출 (인증 불필요)
 public_router = APIRouter(prefix="/pt-applications", tags=["pt-applications"])
 
+
+async def _parse_pt_payload(
+    request: Request, schema_cls,
+) -> tuple[object, str | None]:
+    """JSON / multipart 둘 다 받아서 (스키마 인스턴스, signature_url) 반환.
+
+    member 라우터의 _parse_member_payload와 동일 패턴.
+    Pydantic ValidationError는 422로 변환.
+    """
+    ct = request.headers.get("content-type", "")
+    if ct.startswith("multipart/"):
+        form = await request.form()
+        payload_str = form.get("payload")
+        if not isinstance(payload_str, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="multipart 요청은 payload(JSON 문자열) 필드가 필요합니다.",
+            )
+        try:
+            data = schema_cls.model_validate_json(payload_str)
+        except ValidationError as e:
+            raise HTTPException(
+                status_code=422,
+                detail=e.errors(include_context=False, include_url=False),
+            ) from e
+
+        signature_url: str | None = None
+        signature = form.get("signature")
+        if signature is not None and hasattr(signature, "read"):
+            if signature.content_type and signature.content_type != "image/png":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"서명은 PNG만 허용됩니다: {signature.content_type}",
+                )
+            sig_bytes = await signature.read()
+            if len(sig_bytes) > MAX_SIGNATURE_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="서명 크기 초과 (최대 1MB)",
+                )
+            signature_url = save_signature(sig_bytes)
+        return data, signature_url
+
+    body = await request.json()
+    try:
+        return schema_cls.model_validate(body), None
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=e.errors(include_context=False, include_url=False),
+        ) from e
+
+
 @public_router.post("", response_model=PTApplicationResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("30/minute")
-def create_pt_application(
+async def create_pt_application(
     request: Request,
-    payload: PTApplicationCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """PT 신청서 생성 (Public). 어드민 알림은 BackgroundTasks로 응답 후 발송."""
-    return pt_application_service.create_pt_application(db, payload, background_tasks)
+    """PT 신청서 생성 (Public). JSON / multipart 둘 다 지원."""
+    data, signature_url = await _parse_pt_payload(request, PTApplicationCreate)
+    return pt_application_service.create_pt_application(
+        db, data, background_tasks, signature_url=signature_url,
+    )
 
 
 @public_router.post("/re-register", response_model=PTApplicationResponse)
 @limiter.limit("30/minute")
-def re_register_pt_application(
+async def re_register_pt_application(
     request: Request,
-    payload: PTApplicationReRegister,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """PT 재등록 신청 (Public) - 기존 PT 행 UPDATE + final_price 누적.
 
-    식별: branch_id + name + phone 일치. 없으면 404, 둘 이상이면 400.
+    JSON / multipart 둘 다 지원. 식별: branch_id + name + phone 일치.
     """
+    data, signature_url = await _parse_pt_payload(request, PTApplicationReRegister)
     return pt_application_service.re_register_pt_application(
-        db, payload, background_tasks,
+        db, data, background_tasks, signature_url=signature_url,
     )
 
 # Admin - 인증 의존성은 인증 도입 후 부착
