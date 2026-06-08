@@ -63,22 +63,12 @@ def get_pt_pass(db: Session, pass_id: UUID) -> PTPass:
     return pass_obj
 
 def update_pt_pass(db: Session, pass_id: UUID, data: PTPassUpdate, current_admin: Admin,) -> PTPass:
-    """수강권 정보 수정 (부분 수정)"""
+    """수강권 정보 수정 (부분 수정 - membership 와 동일 패턴)."""
     pass_obj = get_pt_pass(db, pass_id)
     assert_branch_access(current_admin, pass_obj.branch_id)
 
-    if data.name is not None:
-        pass_obj.name = data.name
-    if data.cash_price is not None:
-        pass_obj.cash_price = data.cash_price
-    if data.card_price is not None:
-        pass_obj.card_price = data.card_price
-    if data.duration_months is not None:
-        pass_obj.duration_months = data.duration_months
-    if data.provides_locker is not None:
-        pass_obj.provides_locker = data.provides_locker
-    if data.provides_clothes is not None:
-        pass_obj.provides_clothes = data.provides_clothes
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(pass_obj, field, value)
 
     db.commit()
     db.refresh(pass_obj)

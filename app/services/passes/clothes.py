@@ -57,18 +57,11 @@ def get_clothes_pass(db: Session, pass_id: UUID) -> ClothesPass:
 def update_clothes_pass(
     db: Session, pass_id: UUID, data: ClothesPassUpdate, current_admin: Admin,
 ) -> ClothesPass:
+    """운동복 상품 수정 (부분 수정 - membership 와 동일 패턴)."""
     pass_obj = get_clothes_pass(db, pass_id)
     assert_branch_access(current_admin, pass_obj.branch_id)
-    if data.name is not None:
-        pass_obj.name = data.name
-    if data.cash_price is not None:
-        pass_obj.cash_price = data.cash_price
-    if data.card_price is not None:
-        pass_obj.card_price = data.card_price
-    if data.duration_months is not None:
-        pass_obj.duration_months = data.duration_months
-    if data.provides_locker is not None:
-        pass_obj.provides_locker = data.provides_locker
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(pass_obj, field, value)
     db.commit()
     db.refresh(pass_obj)
     return pass_obj

@@ -66,27 +66,23 @@ def get_membership_pass(db: Session, pass_id: UUID) -> MembershipPass:
     return pass_obj
 
 def update_membership_pass(
-        db: Session, 
-        pass_id: UUID, 
+        db: Session,
+        pass_id: UUID,
         data: MembershipPassUpdate,
         current_admin: Admin,
 ) -> MembershipPass:
-    """회원권 정보 수정 (부분 수정)"""
+    """회원권 정보 수정 (부분 수정).
+
+    `model_dump(exclude_unset=True)` 로 프론트가 명시적으로 보낸 필드만 추출 →
+    setattr 적용. 이렇게 해야 클라이언트가 `duration_months: null` 처럼 명시적으로
+    None 을 보낸 경우도 "값을 비우는" 의도로 정확히 반영된다.
+    (이전엔 `if x is not None: ...` 패턴이라 None clear 가 무시됐음.)
+    """
     pass_obj = get_membership_pass(db, pass_id)
     assert_branch_access(current_admin, pass_obj.branch_id)
 
-    if data.name is not None:
-        pass_obj.name = data.name
-    if data.cash_price is not None:
-        pass_obj.cash_price = data.cash_price
-    if data.card_price is not None:
-        pass_obj.card_price = data.card_price
-    if data.duration_months is not None:
-        pass_obj.duration_months = data.duration_months
-    if data.provides_locker is not None:
-        pass_obj.provides_locker = data.provides_locker
-    if data.provides_clothes is not None:
-        pass_obj.provides_clothes = data.provides_clothes
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(pass_obj, field, value)
 
     db.commit()
     db.refresh(pass_obj)
