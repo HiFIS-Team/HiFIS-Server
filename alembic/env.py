@@ -22,6 +22,7 @@ from app.models.admin import password_reset_token as _password_reset_token  # no
 from app.models.admin import notification as _notification  # noqa: F401
 from app.models.admin import push_subscription as _push_subscription  # noqa: F401
 from app.models.messaging import message as _message  # noqa: F401
+from app.models.messaging import alimtalk_template as _alimtalk_template  # noqa: F401
 from app.models import hold as _hold  # noqa: F401
 from app.models.passes import locker as _locker_pass  # noqa: F401
 from app.models.passes import clothes as _clothes_pass  # noqa: F401
