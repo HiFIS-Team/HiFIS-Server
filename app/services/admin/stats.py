@@ -1,7 +1,9 @@
-"""유입경로 / 방문목적 통계 - 이번 달 기준 집계"""
-from datetime import date, datetime
+"""유입경로 / 방문목적 통계 - 월 기준 집계 (month 지정 없으면 이번 달, KST)"""
+from datetime import datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -17,20 +19,49 @@ from app.schemas.enums import (
 )
 from app.schemas.admin.stats import StatDetailItem, StatItem, StatsResponse
 
-def _current_month_range() -> tuple[datetime, datetime]:
-    """이번 달 시작 / 다음 달 시작 반환 (created_at 필터용)"""
-    today = date.today()
-    month_start = datetime(today.year, today.month, 1)
-    if today.month == 12:
-        next_month_start = datetime(today.year + 1, 1, 1)
+_KST = ZoneInfo("Asia/Seoul")
+
+
+def _month_range(month: str | None) -> tuple[datetime, datetime]:
+    """월 시작 / 다음 달 시작 반환 (created_at 필터용).
+
+    month 형식: "YYYY-MM" (예: "2026-05"). 미지정 시 KST 기준 이번 달.
+    잘못된 형식은 400 에러.
+    """
+    if month is None:
+        today = datetime.now(_KST).date()
+        year, mon = today.year, today.month
     else:
-        next_month_start = datetime(today.year, today.month + 1, 1)
+        try:
+            year_str, mon_str = month.split("-")
+            year, mon = int(year_str), int(mon_str)
+            if not (1 <= mon <= 12) or year < 2000 or year > 2100:
+                raise ValueError
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="month는 YYYY-MM 형식이어야 합니다 (예: 2026-05).",
+            )
+
+    month_start = datetime(year, mon, 1)
+    if mon == 12:
+        next_month_start = datetime(year + 1, 1, 1)
+    else:
+        next_month_start = datetime(year, mon + 1, 1)
     return month_start, next_month_start
 
-def get_referral_stats(db: Session, branch_id: UUID | None, current_admin: Admin) -> StatsResponse:
-    """이번 달 유입경로 통계 (Member + PTApplication 합산) + 기타 세부 입력"""
+def get_referral_stats(
+    db: Session,
+    branch_id: UUID | None,
+    current_admin: Admin,
+    month: str | None = None,
+) -> StatsResponse:
+    """월 유입경로 통계 (Member + PTApplication 합산) + 기타 세부 입력.
+
+    month 미지정 시 KST 기준 이번 달.
+    """
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
-    month_start, next_month_start = _current_month_range()
+    month_start, next_month_start = _month_range(month)
 
     # Member 집계
     member_q = db.query(Member.referral, func.count().label("c")).filter(
@@ -115,10 +146,14 @@ def get_motivation_stats(
     db: Session,
     branch_id: UUID | None,
     current_admin: Admin,
+    month: str | None = None,
 ) -> StatsResponse:
-    """이번 달 방문목적 통계 (Member + PTApplication 합산, PT는 nullable이라 NULL 제외)"""
+    """월 방문목적 통계 (Member + PTApplication 합산, PT는 nullable이라 NULL 제외).
+
+    month 미지정 시 KST 기준 이번 달.
+    """
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
-    month_start, next_month_start = _current_month_range()
+    month_start, next_month_start = _month_range(month)
 
     # Member 집계 (motivation은 필수)
     member_q = db.query(Member.motivation, func.count().label("c")).filter(

@@ -186,3 +186,61 @@ class TestMotivationIncludesPT:
         res = client.get("/admin/stats/motivation", headers=auth_super)
         assert res.status_code == 200
         assert res.json()["total"] == 0
+
+
+class TestMonthParam:
+    """month 쿼리 파라미터 - YYYY-MM 형식, 미지정 시 이번 달"""
+
+    def test_current_month_explicit(self, client, db, auth_super, branch):
+        """month=이번달YYYY-MM 명시 → 미지정 응답과 동일"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        today = date.today()
+        ym = f"{today.year}-{today.month:02d}"
+        res_with = client.get(
+            f"/admin/stats/referral?month={ym}", headers=auth_super,
+        )
+        res_no = client.get("/admin/stats/referral", headers=auth_super)
+        assert res_with.status_code == 200
+        assert res_no.status_code == 200
+        assert res_with.json()["total"] == res_no.json()["total"] == 1
+
+    def test_past_month_zero(self, client, db, auth_super, branch):
+        """과거 달 → 0 (이번 달에 만든 회원은 안 잡힘)"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        res = client.get(
+            "/admin/stats/referral?month=2020-01", headers=auth_super,
+        )
+        assert res.status_code == 200
+        assert res.json()["total"] == 0
+
+    def test_invalid_format_422(self, client, auth_super):
+        """잘못된 형식 → 422 (Pydantic Query 패턴 검증)"""
+        for bad in ["2026-5", "2026/05", "26-05", "2026-13", "abc"]:
+            res = client.get(
+                f"/admin/stats/referral?month={bad}", headers=auth_super,
+            )
+            assert res.status_code == 422, f"{bad} should be 422"
+
+    def test_motivation_month_param(self, client, db, auth_super, branch):
+        """motivation 통계도 month 받음"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        res = client.get(
+            "/admin/stats/motivation?month=2020-01", headers=auth_super,
+        )
+        assert res.status_code == 200
+        assert res.json()["total"] == 0
