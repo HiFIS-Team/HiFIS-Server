@@ -42,3 +42,15 @@ class PassSalesResponse(BaseModel):
     pt: PassCategoryStats
     locker: PassCategoryStats
     clothes: PassCategoryStats
+
+
+class CategoryStatsResponse(BaseModel):
+    """신규/재등록 구분별 월 신청 통계 - 회원·PT 묶음 응답.
+
+    각 카테고리 items[i]:
+    - code = "NEW" | "EXISTING"
+    - label = "신규" | "재등록"
+    - count = 해당 월 카운트
+    """
+    member: PassCategoryStats
+    pt: PassCategoryStats

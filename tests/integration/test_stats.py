@@ -352,3 +352,112 @@ class TestPassSalesStats:
         )
         assert res.status_code == 200
         assert res.json()["membership"]["total"] == 0
+
+
+class TestCategoryStats:
+    """GET /admin/stats/category - 신규/재등록 회원·PT 묶음"""
+
+    def test_response_shape(self, client, auth_super, branch):
+        """빈 응답 형식 - member·pt 둘 다 NEW/EXISTING 0건"""
+        res = client.get("/admin/stats/category", headers=auth_super)
+        assert res.status_code == 200
+        body = res.json()
+        for key in ("member", "pt"):
+            assert {item["code"] for item in body[key]["items"]} == {
+                "NEW", "EXISTING",
+            }
+            assert all(item["count"] == 0 for item in body[key]["items"])
+            assert body[key]["total"] == 0
+
+    def test_member_category_counts(self, client, db, auth_super, branch):
+        """Member NEW 2 + EXISTING 1 (직접 DB 입력)"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        # NEW 2명 (_make_member 디폴트가 NEW)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000002")
+        # EXISTING 1명 직접 INSERT
+        today = date.today()
+        m_existing = Member(
+            branch_id=branch.id, membership_pass_id=p.id,
+            name="재등록회원", gender="M", birth_date="1990-01-01",
+            phone="01000000099", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS", agreed_terms=True,
+            category="EXISTING",
+        )
+        db.add(m_existing); db.commit()
+
+        res = client.get("/admin/stats/category", headers=auth_super)
+        member = res.json()["member"]
+        items = {it["code"]: it for it in member["items"]}
+        assert items["NEW"]["count"] == 2
+        assert items["NEW"]["label"] == "신규"
+        assert items["EXISTING"]["count"] == 1
+        assert items["EXISTING"]["label"] == "재등록"
+        assert member["total"] == 3
+
+    def test_pt_category_counts(self, client, db, auth_super, branch):
+        """PTApplication NEW 1 + EXISTING 1"""
+        pp = PTPass(
+            branch_id=branch.id, name="PT", cash_price=1, card_price=1,
+        )
+        db.add(pp); db.commit(); db.refresh(pp)
+        today = date.today()
+        for phone, cat in [("01000000201", "NEW"), ("01000000202", "EXISTING")]:
+            pt = PTApplication(
+                branch_id=branch.id, pt_pass_id=pp.id,
+                name="P", gender="M", birth_date="1990-01-01",
+                phone=phone, address="광주",
+                referral="NAVER", payment_method="CARD", final_price=1,
+                start_date=today, end_date=today + timedelta(days=30),
+                motivation="WEIGHT_LOSS",
+                agreed_notice=True,
+                category=cat,
+            )
+            db.add(pt)
+        db.commit()
+
+        res = client.get("/admin/stats/category", headers=auth_super)
+        pt_stats = res.json()["pt"]
+        items = {it["code"]: it["count"] for it in pt_stats["items"]}
+        assert items == {"NEW": 1, "EXISTING": 1}
+        assert pt_stats["total"] == 2
+
+    def test_fc_scoped_to_own_branch(
+        self, client, db, auth_fc, branch, branch_other,
+    ):
+        """FC 호출 시 타 지점 카운트 안 보임"""
+        p_mine = MembershipPass(
+            branch_id=branch.id, name="우리", cash_price=1, card_price=1,
+        )
+        p_other = MembershipPass(
+            branch_id=branch_other.id, name="다른", cash_price=1, card_price=1,
+        )
+        db.add_all([p_mine, p_other]); db.commit()
+        db.refresh(p_mine); db.refresh(p_other)
+        _make_member(db, branch, p_mine.id, "NAVER", "WEIGHT_LOSS", "01000000301")
+        _make_member(
+            db, branch_other, p_other.id, "NAVER", "WEIGHT_LOSS", "01000000302",
+        )
+
+        res = client.get("/admin/stats/category", headers=auth_fc)
+        # FC는 본인 지점(branch)만 → 1건만 보임
+        assert res.json()["member"]["total"] == 1
+
+    def test_month_param(self, client, db, auth_super, branch):
+        """과거 달 → 0"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        res = client.get(
+            "/admin/stats/category?month=2020-01", headers=auth_super,
+        )
+        assert res.status_code == 200
+        assert res.json()["member"]["total"] == 0

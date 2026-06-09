@@ -22,12 +22,18 @@ from app.schemas.enums import (
     Referral,
 )
 from app.schemas.admin.stats import (
+    CategoryStatsResponse,
     PassCategoryStats,
     PassSalesResponse,
     StatDetailItem,
     StatItem,
     StatsResponse,
 )
+
+# 신규·재등록 라벨 - schemas.enums.MemberCategory에 라벨 매핑 없어서 인라인.
+# 변경되면 프론트 UI 라벨도 함께 갱신.
+_CATEGORY_LABELS = {"NEW": "신규", "EXISTING": "재등록"}
+_CATEGORY_ORDER = ["NEW", "EXISTING"]
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -288,6 +294,63 @@ def get_pass_sales_stats(
         clothes=_pass_category(
             db, ClothesPass,
             [Member.clothes_pass_id], [PTApplication.clothes_pass_id],
+            effective_branch_id, month_start, next_month_start,
+        ),
+    )
+
+
+def _category_breakdown(
+    db: Session,
+    model,
+    effective_branch_id: UUID | None,
+    month_start: datetime,
+    next_month_start: datetime,
+) -> PassCategoryStats:
+    """Member 또는 PTApplication의 category(NEW/EXISTING)별 월 카운트.
+
+    응답은 NEW·EXISTING 순서 고정, 0건 카테고리도 포함.
+    """
+    q = db.query(model.category, func.count().label("c")).filter(
+        model.created_at >= month_start,
+        model.created_at < next_month_start,
+    )
+    if effective_branch_id is not None:
+        q = q.filter(model.branch_id == effective_branch_id)
+    rows = q.group_by(model.category).all()
+
+    counts = {code: 0 for code in _CATEGORY_ORDER}
+    for code, c in rows:
+        if code in counts:
+            counts[code] = c
+
+    items = [
+        StatItem(code=code, label=_CATEGORY_LABELS[code], count=counts[code])
+        for code in _CATEGORY_ORDER
+    ]
+    total = sum(item.count for item in items)
+    return PassCategoryStats(items=items, total=total)
+
+
+def get_category_stats(
+    db: Session,
+    branch_id: UUID | None,
+    current_admin: Admin,
+    month: str | None = None,
+) -> CategoryStatsResponse:
+    """신규/재등록 월 통계 - Member·PTApplication 묶음.
+
+    각 모델의 category 컬럼(NEW/EXISTING) 기준 group by.
+    """
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+    month_start, next_month_start = _month_range(month)
+
+    return CategoryStatsResponse(
+        member=_category_breakdown(
+            db, Member,
+            effective_branch_id, month_start, next_month_start,
+        ),
+        pt=_category_breakdown(
+            db, PTApplication,
             effective_branch_id, month_start, next_month_start,
         ),
     )
