@@ -287,3 +287,114 @@ class TestTemplateBody:
         # 발송 자체는 정상 - 잘못된 placeholder는 원본 그대로 남음
         assert result is not None
         assert "{unknown_var}" in result.content
+
+
+class TestPreviewTemplate:
+    """POST /admin/alimtalk-templates/{id}/preview - 헤더+본문+푸터 전체 미리보기"""
+
+    def test_preview_system_trigger_with_dummy_name(
+        self, client, db, auth_super, branch, seeded_templates,
+    ):
+        """시스템 트리거 - 헤더 + 본문 + 푸터 다 포함"""
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        res = client.post(
+            f"/admin/alimtalk-templates/{template.id}/preview",
+            headers=auth_super,
+            json={"branch_id": str(branch.id)},
+        )
+        assert res.status_code == 200
+        preview = res.json()["preview"]
+        # 헤더: "홍길동님 {branch_name} 입니다!"
+        assert "홍길동" in preview
+        assert branch.name in preview
+        # 푸터: 지점 표시
+        assert "🚩" in preview
+        # 본문 일부 (REGISTERED 디폴트)
+        assert "선택해 주셔서" in preview
+
+    def test_preview_personal_trigger_includes_sender(
+        self, client, db, auth_super, branch, seeded_templates,
+    ):
+        """안부 트리거 + messenger_admin 설정 → 발송자 이름·직책 포함, 푸터 없음"""
+        from app.models.admin.admin import Admin
+        admin = Admin(
+            email="messenger@test.com", password_hash="x", name="박매니저",
+            role="FC", position="MANAGER", status="ACTIVE", branch_id=branch.id,
+        )
+        db.add(admin); db.commit(); db.refresh(admin)
+        branch.messenger_admin_id = admin.id
+        db.commit()
+
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "D_PLUS_7",
+        ).first()
+        res = client.post(
+            f"/admin/alimtalk-templates/{template.id}/preview",
+            headers=auth_super,
+            json={"branch_id": str(branch.id)},
+        )
+        assert res.status_code == 200
+        preview = res.json()["preview"]
+        # 안부 헤더: 발송자 이름·직책 라벨
+        assert "박매니저" in preview
+        assert "점장" in preview   # MANAGER → 점장
+        # 안부 톤은 푸터 없음
+        assert "🚩" not in preview
+
+    def test_preview_uses_request_body_override(
+        self, client, db, auth_super, branch, seeded_templates,
+    ):
+        """편집 중인 body 보내면 그 본문 + 변수 치환"""
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        res = client.post(
+            f"/admin/alimtalk-templates/{template.id}/preview",
+            headers=auth_super,
+            json={
+                "branch_id": str(branch.id),
+                "body": "편집중 {name}님 환영합니다",
+            },
+        )
+        assert res.status_code == 200
+        assert "편집중 홍길동님 환영합니다" in res.json()["preview"]
+
+    def test_preview_default_branch_when_not_specified(
+        self, client, db, auth_super, branch, seeded_templates,
+    ):
+        """branch_id 미입력 → 첫 지점 자동 선택"""
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        res = client.post(
+            f"/admin/alimtalk-templates/{template.id}/preview",
+            headers=auth_super,
+            json={},
+        )
+        assert res.status_code == 200
+        # 첫 지점이 응답에 박힘 (대표값)
+        assert res.json()["preview"]  # 빈 문자열 아님
+
+    def test_preview_template_not_found_404(self, client, auth_super):
+        from uuid import uuid4
+        res = client.post(
+            f"/admin/alimtalk-templates/{uuid4()}/preview",
+            headers=auth_super,
+            json={},
+        )
+        assert res.status_code == 404
+
+    def test_preview_fc_forbidden(
+        self, client, db, auth_fc, branch, seeded_templates,
+    ):
+        """FC는 미리보기도 차단"""
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        res = client.post(
+            f"/admin/alimtalk-templates/{template.id}/preview",
+            headers=auth_fc, json={},
+        )
+        assert res.status_code == 403

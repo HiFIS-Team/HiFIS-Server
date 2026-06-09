@@ -5,12 +5,16 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.admin.admin import Admin
+from app.models.branch import Branch
 from app.models.messaging.alimtalk_template import AlimtalkTemplate
 from app.schemas.enums import PERSONAL_TRIGGERS, TriggerType
 from app.schemas.messaging.alimtalk_template import (
+    AlimtalkTemplatePreviewRequest,
     AlimtalkTemplateUpdate,
     AlimtalkVariable,
 )
+from app.services.messaging import message_templates
 from app.services.messaging.message_templates import _BODIES
 
 logger = logging.getLogger(__name__)
@@ -115,3 +119,79 @@ def get_body_for(db: Session, trigger: TriggerType | str) -> str | None:
     if template is None:
         return None
     return template.body
+
+
+# 미리보기 더미값 - 실제 발송 시엔 회원 데이터로 치환됨
+_PREVIEW_DUMMY_NAME = "홍길동"
+
+
+def preview_template(
+    db: Session, template_id: UUID, data: AlimtalkTemplatePreviewRequest,
+) -> str:
+    """편집 중인(또는 저장된) 본문 + 헤더 + 푸터 조립해서 미리보기 반환.
+
+    branch_id 미입력 시 첫 지점 사용 (대표 미리보기).
+    안부 트리거면 발송자(branch.messenger_admin_id) 정보 자동 채움.
+    """
+    template = (
+        db.query(AlimtalkTemplate)
+        .filter(AlimtalkTemplate.id == template_id)
+        .first()
+    )
+    if template is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 알림톡 템플릿입니다.",
+        )
+
+    # 대상 지점 - 명시 안 하면 첫 지점 (created_at 순). 지점 없으면 폴백 더미.
+    if data.branch_id is not None:
+        branch = db.query(Branch).filter(Branch.id == data.branch_id).first()
+        if branch is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="존재하지 않는 지점입니다.",
+            )
+    else:
+        branch = db.query(Branch).order_by(Branch.created_at).first()
+
+    if branch is not None:
+        branch_name = branch.name
+        branch_phone = branch.phone
+        naver_url = branch.naver_place_url
+        # 안부 트리거 발송자 정보
+        sender_name: str | None = None
+        sender_position: str | None = None
+        if branch.messenger_admin_id is not None:
+            admin = db.query(Admin).filter(
+                Admin.id == branch.messenger_admin_id,
+            ).first()
+            if admin is not None:
+                sender_name = admin.name
+                sender_position = admin.position
+    else:
+        # 지점 1개도 없는 초기 상태 폴백
+        branch_name = "○○점"
+        branch_phone = "010-0000-0000"
+        naver_url = None
+        sender_name = None
+        sender_position = None
+
+    # 본문 우선순위: 요청 body > DB body > 코드 _BODIES
+    if data.body is not None:
+        body = data.body
+    elif template.body is not None:
+        body = template.body
+    else:
+        body = _BODIES.get(template.trigger_type, "")
+
+    return message_templates.render_message(
+        trigger=template.trigger_type,
+        name=_PREVIEW_DUMMY_NAME,
+        branch_name=branch_name,
+        branch_phone=branch_phone,
+        naver_place_url=naver_url,
+        body_override=body,
+        sender_name=sender_name,
+        sender_position=sender_position,
+    )

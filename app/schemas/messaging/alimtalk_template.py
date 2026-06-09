@@ -27,3 +27,14 @@ class AlimtalkTemplateUpdate(BaseModel):
     """PATCH 본문 - is_enabled/body 모두 부분 수정 가능"""
     is_enabled: bool | None = None
     body: str | None = None    # 빈 문자열·None 모두 허용 (디폴트 복원)
+
+
+class AlimtalkTemplatePreviewRequest(BaseModel):
+    """미리보기 요청 - 편집 중인 본문과 대표 지점 선택"""
+    body: str | None = None     # 미입력 시 DB 저장 본문 또는 코드 디폴트 사용
+    branch_id: UUID | None = None   # 미입력 시 첫 지점 사용 (헤더/푸터/발송자 채움)
+
+
+class AlimtalkTemplatePreviewResponse(BaseModel):
+    """미리보기 응답 - 헤더+본문+푸터 전체 조립된 텍스트"""
+    preview: str
