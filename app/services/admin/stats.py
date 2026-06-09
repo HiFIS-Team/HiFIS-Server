@@ -9,6 +9,10 @@ from sqlalchemy import func
 
 from app.api.deps import resolve_branch_filter
 from app.models.admin.admin import Admin
+from app.models.passes.clothes import ClothesPass
+from app.models.passes.locker import LockerPass
+from app.models.passes.membership import MembershipPass
+from app.models.passes.pt import PTPass
 from app.models.registrations.member import Member
 from app.models.registrations.pt_application import PTApplication
 from app.schemas.enums import (
@@ -17,7 +21,13 @@ from app.schemas.enums import (
     Motivation,
     Referral,
 )
-from app.schemas.admin.stats import StatDetailItem, StatItem, StatsResponse
+from app.schemas.admin.stats import (
+    PassCategoryStats,
+    PassSalesResponse,
+    StatDetailItem,
+    StatItem,
+    StatsResponse,
+)
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -191,3 +201,93 @@ def get_motivation_stats(
     ]
     total = sum(item.count for item in items)
     return StatsResponse(items=items, total=total)
+
+
+def _pass_category(
+    db: Session,
+    pass_model,
+    member_fk_columns: list,
+    pt_fk_columns: list,
+    effective_branch_id: UUID | None,
+    month_start: datetime,
+    next_month_start: datetime,
+) -> PassCategoryStats:
+    """한 카테고리(회원권/PT/락커/운동복) 판매 집계.
+
+    pass_model: MembershipPass / PTPass / LockerPass / ClothesPass
+    member_fk_columns: Member 테이블에서 이 카테고리를 참조하는 컬럼들
+        예) [Member.membership_pass_id] 또는 [Member.locker_pass_id]
+    pt_fk_columns: PTApplication 테이블에서 참조하는 컬럼들
+        예) [PTApplication.pt_pass_id] 또는 [PTApplication.locker_pass_id]
+    """
+    # 지점별 모든 pass (count=0이라도 응답에 포함)
+    pass_q = db.query(pass_model)
+    if effective_branch_id is not None:
+        pass_q = pass_q.filter(pass_model.branch_id == effective_branch_id)
+    passes = pass_q.order_by(pass_model.created_at).all()
+
+    counts: dict[str, int] = {p.id: 0 for p in passes}
+
+    def _accumulate(model, fk_col):
+        q = db.query(fk_col, func.count().label("c")).filter(
+            model.created_at >= month_start,
+            model.created_at < next_month_start,
+            fk_col.is_not(None),
+        )
+        if effective_branch_id is not None:
+            q = q.filter(model.branch_id == effective_branch_id)
+        for pass_id, c in q.group_by(fk_col).all():
+            if pass_id in counts:  # 지점 필터 후의 pass만 합산
+                counts[pass_id] += c
+
+    for col in member_fk_columns:
+        _accumulate(Member, col)
+    for col in pt_fk_columns:
+        _accumulate(PTApplication, col)
+
+    items = [
+        StatItem(code=str(p.id), label=p.name, count=counts[p.id])
+        for p in passes
+    ]
+    total = sum(item.count for item in items)
+    return PassCategoryStats(items=items, total=total)
+
+
+def get_pass_sales_stats(
+    db: Session,
+    branch_id: UUID | None,
+    current_admin: Admin,
+    month: str | None = None,
+) -> PassSalesResponse:
+    """상품별 월 판매 통계 - 4종 묶음.
+
+    회원권: Member.membership_pass_id
+    PT: PTApplication.pt_pass_id
+    락커: Member.locker_pass_id + PTApplication.locker_pass_id 합산
+    운동복: Member.clothes_pass_id + PTApplication.clothes_pass_id 합산
+    """
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+    month_start, next_month_start = _month_range(month)
+
+    return PassSalesResponse(
+        membership=_pass_category(
+            db, MembershipPass,
+            [Member.membership_pass_id], [],
+            effective_branch_id, month_start, next_month_start,
+        ),
+        pt=_pass_category(
+            db, PTPass,
+            [], [PTApplication.pt_pass_id],
+            effective_branch_id, month_start, next_month_start,
+        ),
+        locker=_pass_category(
+            db, LockerPass,
+            [Member.locker_pass_id], [PTApplication.locker_pass_id],
+            effective_branch_id, month_start, next_month_start,
+        ),
+        clothes=_pass_category(
+            db, ClothesPass,
+            [Member.clothes_pass_id], [PTApplication.clothes_pass_id],
+            effective_branch_id, month_start, next_month_start,
+        ),
+    )

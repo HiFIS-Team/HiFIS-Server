@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.db.deps import get_db
 from app.models.admin.admin import Admin
-from app.schemas.admin.stats import StatsResponse
+from app.schemas.admin.stats import PassSalesResponse, StatsResponse
 from app.services.admin import stats as stats_service
 
 admin_router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
@@ -41,3 +41,17 @@ def get_motivation_stats(
 ):
     """월 방문목적 통계 (Member 기준) - FC는 자기 지점만"""
     return stats_service.get_motivation_stats(db, branch_id, current_admin, month)
+
+
+@admin_router.get("/passes", response_model=PassSalesResponse)
+def get_pass_sales_stats(
+    branch_id: UUID | None = None,
+    month: str | None = Query(
+        default=None, pattern=_MONTH_PATTERN,
+        description="YYYY-MM (예: 2026-05). 미지정 시 KST 이번 달.",
+    ),
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """상품별 월 판매 통계 - 회원권/PT/락커/운동복 4종 묶음. FC는 자기 지점만"""
+    return stats_service.get_pass_sales_stats(db, branch_id, current_admin, month)

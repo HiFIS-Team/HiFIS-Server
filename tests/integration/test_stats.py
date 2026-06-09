@@ -244,3 +244,111 @@ class TestMonthParam:
         )
         assert res.status_code == 200
         assert res.json()["total"] == 0
+
+
+class TestPassSalesStats:
+    """GET /admin/stats/passes - 4종 묶음 (회원권/PT/락커/운동복)"""
+
+    def test_response_has_four_categories(self, client, auth_super, branch):
+        """응답에 4종 카테고리 다 포함, 데이터 없으면 빈 배열·total 0"""
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        assert res.status_code == 200
+        body = res.json()
+        for key in ("membership", "pt", "locker", "clothes"):
+            assert key in body
+            assert body[key] == {"items": [], "total": 0}
+
+    def test_membership_counts(self, client, db, auth_super, branch):
+        """회원권 — 가입자 카운트 + zero-pass도 응답 포함"""
+        from app.models.passes.locker import LockerPass
+        p1 = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        p2 = MembershipPass(
+            branch_id=branch.id, name="3개월", cash_price=1, card_price=1,
+        )
+        db.add_all([p1, p2]); db.commit(); db.refresh(p1); db.refresh(p2)
+        _make_member(db, branch, p1.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+        _make_member(db, branch, p1.id, "NAVER", "WEIGHT_LOSS", "01000000002")
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        body = res.json()["membership"]
+        # p1 = 2, p2 = 0 (zero-pass도 포함)
+        items_by_id = {item["code"]: item for item in body["items"]}
+        assert items_by_id[str(p1.id)]["count"] == 2
+        assert items_by_id[str(p1.id)]["label"] == "1개월"
+        assert items_by_id[str(p2.id)]["count"] == 0
+        assert body["total"] == 2
+
+    def test_locker_sums_member_and_pt(self, client, db, auth_super, branch):
+        """락커 — Member.locker_pass_id + PTApplication.locker_pass_id 합산"""
+        from app.models.passes.locker import LockerPass
+        mp = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        pp = PTPass(
+            branch_id=branch.id, name="PT 10회", cash_price=1, card_price=1,
+        )
+        lp = LockerPass(
+            branch_id=branch.id, name="락커 1개월", cash_price=1, card_price=1,
+        )
+        db.add_all([mp, pp, lp]); db.commit()
+        db.refresh(mp); db.refresh(pp); db.refresh(lp)
+
+        # Member 1명 (락커 사용)
+        today = date.today()
+        m = Member(
+            branch_id=branch.id, membership_pass_id=mp.id, locker_pass_id=lp.id,
+            name="M", gender="M", birth_date="1990-01-01",
+            phone="01099990001", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS", agreed_terms=True,
+        )
+        # PT 1건 (락커 사용)
+        pt = PTApplication(
+            branch_id=branch.id, pt_pass_id=pp.id, locker_pass_id=lp.id,
+            name="P", gender="M", birth_date="1990-01-01",
+            phone="01099990002", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS",
+            agreed_notice=True,
+        )
+        db.add_all([m, pt]); db.commit()
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        locker = res.json()["locker"]
+        assert locker["items"][0]["code"] == str(lp.id)
+        assert locker["items"][0]["count"] == 2  # Member + PT
+        assert locker["total"] == 2
+
+    def test_branch_isolation_fc(self, client, db, auth_fc, branch, branch_other):
+        """FC는 본인 지점 상품만 응답 (타 지점 pass 안 보임)"""
+        from app.models.passes.locker import LockerPass
+        p_mine = MembershipPass(
+            branch_id=branch.id, name="우리지점", cash_price=1, card_price=1,
+        )
+        p_other = MembershipPass(
+            branch_id=branch_other.id, name="다른지점", cash_price=1, card_price=1,
+        )
+        db.add_all([p_mine, p_other]); db.commit()
+
+        res = client.get("/admin/stats/passes", headers=auth_fc)
+        codes = {item["code"] for item in res.json()["membership"]["items"]}
+        assert str(p_mine.id) in codes
+        assert str(p_other.id) not in codes
+
+    def test_past_month_zero(self, client, db, auth_super, branch):
+        """과거 달 → 0"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        res = client.get(
+            "/admin/stats/passes?month=2020-01", headers=auth_super,
+        )
+        assert res.status_code == 200
+        assert res.json()["membership"]["total"] == 0
