@@ -96,6 +96,33 @@ def _build_footer(
         lines.append(naver_place_url)
     return "\n".join(lines)
 
+def _substitute_body_vars(
+    body: str,
+    name: str,
+    branch_name: str,
+    branch_phone: str,
+    sender_name: str | None,
+    sender_position: str | None,
+) -> str:
+    """본문에 변수 placeholder({name}, {branch_name} 등) 있으면 치환.
+
+    사장님이 어드민에서 본문 편집할 때 변수 박을 수 있게 허용.
+    잘못된 placeholder (예: {wrong}) 있어도 본문 손상 없이 원본 그대로 반환.
+    """
+    vars_map = {
+        "name": name,
+        "branch_name": branch_name,
+        "branch_phone": branch_phone,
+        "sender_name": sender_name or "",
+        "sender_position": sender_position or "",
+    }
+    try:
+        return body.format(**vars_map)
+    except (KeyError, IndexError, ValueError):
+        # 잘못된 placeholder는 발송 차단 안 하고 원본 그대로
+        return body
+
+
 def render_message(
     trigger: str,
     name: str,
@@ -110,9 +137,14 @@ def render_message(
 
     - 안부 트리거 + sender 정보 있음 → "○○○님 안녕하세요 :) 지점 이름 직책 입니다." + 본문 (푸터 없음)
     - 그 외 (시스템 트리거이거나 sender 정보 없음) → 헤더 + 본문 + 푸터
-    - body_override 있으면 트리거 본문 대신 사용 (홀딩 AI 본문 케이스)
+    - body_override 있으면 그대로 사용 (DB body 또는 홀딩 AI 본문 케이스)
+    - body_override 없으면 _BODIES 코드 폴백
+    - 본문에 {name} 등 변수 placeholder 있으면 치환 (사장님 편집 본문 지원)
     """
     body = body_override or _BODIES.get(trigger, "안녕하세요, 반갑습니다 :)")
+    body = _substitute_body_vars(
+        body, name, branch_name, branch_phone, sender_name, sender_position,
+    )
 
     is_personal = (
         trigger in {t.value for t in PERSONAL_TRIGGERS}

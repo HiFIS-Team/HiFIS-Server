@@ -75,13 +75,21 @@ def send_message(db: Session, data: MessageSendRequest) -> Message | None:
 
     # 2. 트리거 양식 렌더링 (안부 트리거는 발송자 이름·직책 박힘, 시스템은 헤더+푸터)
     sender_name, sender_position = _get_messenger_info(db, branch)
+
+    # 본문 결정 - HOLD AI(body_override) > DB body > _BODIES 코드 폴백
+    effective_body_override = data.body_override
+    if effective_body_override is None:
+        db_body = alimtalk_template_service.get_body_for(db, data.trigger_type)
+        if db_body:
+            effective_body_override = db_body
+
     content = message_templates.render_message(
         trigger=data.trigger_type.value,
         name=data.name,
         branch_name=branch.name,
         branch_phone=branch.phone,
         naver_place_url=branch.naver_place_url,
-        body_override=data.body_override,
+        body_override=effective_body_override,
         sender_name=sender_name,
         sender_position=sender_position,
     )

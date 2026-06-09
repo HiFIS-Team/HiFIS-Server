@@ -161,3 +161,129 @@ class TestSendMessageRespectsTrigger:
         # 발송 시도 → Message row 생성 (Solapi mock으로 SUCCESS)
         assert result is not None
         assert result.trigger_type == "REGISTERED"
+
+
+class TestTemplateBody:
+    """body 컬럼 + 변수 사전 + 발송 시 DB body 사용"""
+
+    def test_response_includes_default_body_and_variables(
+        self, client, auth_super, seeded_templates,
+    ):
+        """응답에 default_body, variables 포함"""
+        res = client.get("/admin/alimtalk-templates", headers=auth_super)
+        assert res.status_code == 200
+        body = res.json()
+        for t in body:
+            assert "default_body" in t
+            assert "variables" in t
+            assert isinstance(t["variables"], list)
+            # 공통 변수 3개는 최소 보장
+            keys = {v["key"] for v in t["variables"]}
+            assert {"name", "branch_name", "branch_phone"} <= keys
+
+    def test_personal_trigger_has_sender_vars(
+        self, client, auth_super, seeded_templates,
+    ):
+        """안부 트리거에는 sender_name·sender_position 변수도 포함"""
+        res = client.get("/admin/alimtalk-templates", headers=auth_super)
+        d_plus_7 = next(t for t in res.json() if t["trigger_type"] == "D_PLUS_7")
+        keys = {v["key"] for v in d_plus_7["variables"]}
+        assert "sender_name" in keys
+        assert "sender_position" in keys
+
+    def test_patch_body_updates(self, client, db, auth_super, seeded_templates):
+        """PATCH body로 본문 수정"""
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        new_body = "{name}님 등록 감사합니다."
+        res = client.patch(
+            f"/admin/alimtalk-templates/{template.id}",
+            headers=auth_super,
+            json={"body": new_body},
+        )
+        assert res.status_code == 200
+        assert res.json()["body"] == new_body
+
+    def test_patch_empty_body_resets_to_default(
+        self, client, db, auth_super, seeded_templates,
+    ):
+        """빈 문자열 PATCH → NULL 저장 → 응답 body=null (코드 디폴트로 폴백 의미)"""
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        template.body = "옛 커스텀"
+        db.commit()
+
+        res = client.patch(
+            f"/admin/alimtalk-templates/{template.id}",
+            headers=auth_super,
+            json={"body": ""},
+        )
+        assert res.status_code == 200
+        assert res.json()["body"] is None
+
+    def test_db_body_used_in_send(self, client, db, branch, seeded_templates):
+        """DB body 있으면 발송 본문에 그대로 (변수 치환 포함)"""
+        from app.models.messaging.message import Message
+        from app.schemas.enums import MessageSourceType, TriggerType
+        from app.schemas.messaging.message import MessageSendRequest
+        from app.services.messaging import message as message_service
+        from app.services.admin.system_config import get_system_config
+
+        cfg = get_system_config(db)
+        cfg.messaging_enabled = True
+        branch.messaging_enabled = True
+
+        # DB body에 변수 placeholder 박기
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        template.body = "{name}님 {branch_name} 등록 환영합니다!"
+        db.commit()
+
+        from uuid import uuid4
+        result = message_service.send_message(db, MessageSendRequest(
+            branch_id=branch.id,
+            source_type=MessageSourceType.MEMBER,
+            source_id=uuid4(),
+            trigger_type=TriggerType.REGISTERED,
+            recipient="01099999999",
+            name="테스트",
+        ))
+        assert result is not None
+        # 발송 content에 변수 치환된 본문 포함
+        assert "테스트님" in result.content
+        assert f"테스트님 {branch.name} 등록 환영합니다!" in result.content
+
+    def test_bad_placeholder_does_not_break_send(
+        self, client, db, branch, seeded_templates,
+    ):
+        """잘못된 placeholder 있어도 발송 차단 안 함 (원본 그대로)"""
+        from app.schemas.enums import MessageSourceType, TriggerType
+        from app.schemas.messaging.message import MessageSendRequest
+        from app.services.messaging import message as message_service
+        from app.services.admin.system_config import get_system_config
+
+        cfg = get_system_config(db)
+        cfg.messaging_enabled = True
+        branch.messaging_enabled = True
+
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        template.body = "정상 {name}님 + 잘못된 {unknown_var}"
+        db.commit()
+
+        from uuid import uuid4
+        result = message_service.send_message(db, MessageSendRequest(
+            branch_id=branch.id,
+            source_type=MessageSourceType.MEMBER,
+            source_id=uuid4(),
+            trigger_type=TriggerType.REGISTERED,
+            recipient="01099999999",
+            name="테스트",
+        ))
+        # 발송 자체는 정상 - 잘못된 placeholder는 원본 그대로 남음
+        assert result is not None
+        assert "{unknown_var}" in result.content
