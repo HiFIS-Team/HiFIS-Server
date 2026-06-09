@@ -22,3 +22,35 @@ class StatsResponse(BaseModel):
     items: list[StatItem]
     total: int
     details: list[StatDetailItem] = []
+
+
+class PassCategoryStats(BaseModel):
+    """상품 한 카테고리(회원권/PT/락커/운동복)의 판매 집계"""
+    items: list[StatItem]
+    total: int
+
+
+class PassSalesResponse(BaseModel):
+    """상품별 월 판매 통계 - 4종 묶음 응답.
+
+    각 카테고리 items[i]:
+    - code = pass_id (UUID 문자열)
+    - label = pass_name
+    - count = 해당 월 가입자/신청자 수
+    """
+    membership: PassCategoryStats
+    pt: PassCategoryStats
+    locker: PassCategoryStats
+    clothes: PassCategoryStats
+
+
+class CategoryStatsResponse(BaseModel):
+    """신규/재등록 구분별 월 신청 통계 - 회원·PT 묶음 응답.
+
+    각 카테고리 items[i]:
+    - code = "NEW" | "EXISTING"
+    - label = "신규" | "재등록"
+    - count = 해당 월 카운트
+    """
+    member: PassCategoryStats
+    pt: PassCategoryStats

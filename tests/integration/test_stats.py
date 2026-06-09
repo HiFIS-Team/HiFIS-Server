@@ -186,3 +186,386 @@ class TestMotivationIncludesPT:
         res = client.get("/admin/stats/motivation", headers=auth_super)
         assert res.status_code == 200
         assert res.json()["total"] == 0
+
+
+class TestMonthParam:
+    """month 쿼리 파라미터 - YYYY-MM 형식, 미지정 시 이번 달"""
+
+    def test_current_month_explicit(self, client, db, auth_super, branch):
+        """month=이번달YYYY-MM 명시 → 미지정 응답과 동일"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        today = date.today()
+        ym = f"{today.year}-{today.month:02d}"
+        res_with = client.get(
+            f"/admin/stats/referral?month={ym}", headers=auth_super,
+        )
+        res_no = client.get("/admin/stats/referral", headers=auth_super)
+        assert res_with.status_code == 200
+        assert res_no.status_code == 200
+        assert res_with.json()["total"] == res_no.json()["total"] == 1
+
+    def test_past_month_zero(self, client, db, auth_super, branch):
+        """과거 달 → 0 (이번 달에 만든 회원은 안 잡힘)"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        res = client.get(
+            "/admin/stats/referral?month=2020-01", headers=auth_super,
+        )
+        assert res.status_code == 200
+        assert res.json()["total"] == 0
+
+    def test_invalid_format_422(self, client, auth_super):
+        """잘못된 형식 → 422 (Pydantic Query 패턴 검증)"""
+        for bad in ["2026-5", "2026/05", "26-05", "2026-13", "abc"]:
+            res = client.get(
+                f"/admin/stats/referral?month={bad}", headers=auth_super,
+            )
+            assert res.status_code == 422, f"{bad} should be 422"
+
+    def test_motivation_month_param(self, client, db, auth_super, branch):
+        """motivation 통계도 month 받음"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        res = client.get(
+            "/admin/stats/motivation?month=2020-01", headers=auth_super,
+        )
+        assert res.status_code == 200
+        assert res.json()["total"] == 0
+
+
+class TestPassSalesStats:
+    """GET /admin/stats/passes - 4종 묶음 (회원권/PT/락커/운동복)"""
+
+    def test_response_has_four_categories(self, client, auth_super, branch):
+        """응답에 4종 카테고리 다 포함, 데이터 없으면 빈 배열·total 0"""
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        assert res.status_code == 200
+        body = res.json()
+        for key in ("membership", "pt", "locker", "clothes"):
+            assert key in body
+            assert body[key] == {"items": [], "total": 0}
+
+    def test_membership_counts(self, client, db, auth_super, branch):
+        """회원권 — 가입자 카운트 + zero-pass도 응답 포함"""
+        from app.models.passes.locker import LockerPass
+        p1 = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        p2 = MembershipPass(
+            branch_id=branch.id, name="3개월", cash_price=1, card_price=1,
+        )
+        db.add_all([p1, p2]); db.commit(); db.refresh(p1); db.refresh(p2)
+        _make_member(db, branch, p1.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+        _make_member(db, branch, p1.id, "NAVER", "WEIGHT_LOSS", "01000000002")
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        body = res.json()["membership"]
+        # p1 = 2, p2 = 0 (zero-pass도 포함)
+        items_by_id = {item["code"]: item for item in body["items"]}
+        assert items_by_id[str(p1.id)]["count"] == 2
+        assert items_by_id[str(p1.id)]["label"] == "1개월"
+        assert items_by_id[str(p2.id)]["count"] == 0
+        assert body["total"] == 2
+
+    def test_locker_sums_member_and_pt(self, client, db, auth_super, branch):
+        """락커 — Member.locker_pass_id + PTApplication.locker_pass_id 합산"""
+        from app.models.passes.locker import LockerPass
+        mp = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        pp = PTPass(
+            branch_id=branch.id, name="PT 10회", cash_price=1, card_price=1,
+        )
+        lp = LockerPass(
+            branch_id=branch.id, name="락커 1개월", cash_price=1, card_price=1,
+        )
+        db.add_all([mp, pp, lp]); db.commit()
+        db.refresh(mp); db.refresh(pp); db.refresh(lp)
+
+        # Member 1명 (락커 사용)
+        today = date.today()
+        m = Member(
+            branch_id=branch.id, membership_pass_id=mp.id, locker_pass_id=lp.id,
+            name="M", gender="M", birth_date="1990-01-01",
+            phone="01099990001", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS", agreed_terms=True,
+        )
+        # PT 1건 (락커 사용)
+        pt = PTApplication(
+            branch_id=branch.id, pt_pass_id=pp.id, locker_pass_id=lp.id,
+            name="P", gender="M", birth_date="1990-01-01",
+            phone="01099990002", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS",
+            agreed_notice=True,
+        )
+        db.add_all([m, pt]); db.commit()
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        locker = res.json()["locker"]
+        assert locker["items"][0]["code"] == str(lp.id)
+        assert locker["items"][0]["count"] == 2  # Member + PT
+        assert locker["total"] == 2
+
+    def test_branch_isolation_fc(self, client, db, auth_fc, branch, branch_other):
+        """FC는 본인 지점 상품만 응답 (타 지점 pass 안 보임)"""
+        from app.models.passes.locker import LockerPass
+        p_mine = MembershipPass(
+            branch_id=branch.id, name="우리지점", cash_price=1, card_price=1,
+        )
+        p_other = MembershipPass(
+            branch_id=branch_other.id, name="다른지점", cash_price=1, card_price=1,
+        )
+        db.add_all([p_mine, p_other]); db.commit()
+
+        res = client.get("/admin/stats/passes", headers=auth_fc)
+        codes = {item["code"] for item in res.json()["membership"]["items"]}
+        assert str(p_mine.id) in codes
+        assert str(p_other.id) not in codes
+
+    def test_past_month_zero(self, client, db, auth_super, branch):
+        """과거 달 → 0"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        res = client.get(
+            "/admin/stats/passes?month=2020-01", headers=auth_super,
+        )
+        assert res.status_code == 200
+        assert res.json()["membership"]["total"] == 0
+
+
+class TestCategoryStats:
+    """GET /admin/stats/category - 신규/재등록 회원·PT 묶음"""
+
+    def test_response_shape(self, client, auth_super, branch):
+        """빈 응답 형식 - member·pt 둘 다 NEW/EXISTING 0건"""
+        res = client.get("/admin/stats/category", headers=auth_super)
+        assert res.status_code == 200
+        body = res.json()
+        for key in ("member", "pt"):
+            assert {item["code"] for item in body[key]["items"]} == {
+                "NEW", "EXISTING",
+            }
+            assert all(item["count"] == 0 for item in body[key]["items"])
+            assert body[key]["total"] == 0
+
+    def test_member_category_counts(self, client, db, auth_super, branch):
+        """Member NEW 2 + EXISTING 1 (직접 DB 입력)"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        # NEW 2명 (_make_member 디폴트가 NEW)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000002")
+        # EXISTING 1명 직접 INSERT
+        today = date.today()
+        m_existing = Member(
+            branch_id=branch.id, membership_pass_id=p.id,
+            name="재등록회원", gender="M", birth_date="1990-01-01",
+            phone="01000000099", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS", agreed_terms=True,
+            category="EXISTING",
+        )
+        db.add(m_existing); db.commit()
+
+        res = client.get("/admin/stats/category", headers=auth_super)
+        member = res.json()["member"]
+        items = {it["code"]: it for it in member["items"]}
+        assert items["NEW"]["count"] == 2
+        assert items["NEW"]["label"] == "신규"
+        assert items["EXISTING"]["count"] == 1
+        assert items["EXISTING"]["label"] == "재등록"
+        assert member["total"] == 3
+
+    def test_pt_category_counts(self, client, db, auth_super, branch):
+        """PTApplication NEW 1 + EXISTING 1"""
+        pp = PTPass(
+            branch_id=branch.id, name="PT", cash_price=1, card_price=1,
+        )
+        db.add(pp); db.commit(); db.refresh(pp)
+        today = date.today()
+        for phone, cat in [("01000000201", "NEW"), ("01000000202", "EXISTING")]:
+            pt = PTApplication(
+                branch_id=branch.id, pt_pass_id=pp.id,
+                name="P", gender="M", birth_date="1990-01-01",
+                phone=phone, address="광주",
+                referral="NAVER", payment_method="CARD", final_price=1,
+                start_date=today, end_date=today + timedelta(days=30),
+                motivation="WEIGHT_LOSS",
+                agreed_notice=True,
+                category=cat,
+            )
+            db.add(pt)
+        db.commit()
+
+        res = client.get("/admin/stats/category", headers=auth_super)
+        pt_stats = res.json()["pt"]
+        items = {it["code"]: it["count"] for it in pt_stats["items"]}
+        assert items == {"NEW": 1, "EXISTING": 1}
+        assert pt_stats["total"] == 2
+
+    def test_fc_scoped_to_own_branch(
+        self, client, db, auth_fc, branch, branch_other,
+    ):
+        """FC 호출 시 타 지점 카운트 안 보임"""
+        p_mine = MembershipPass(
+            branch_id=branch.id, name="우리", cash_price=1, card_price=1,
+        )
+        p_other = MembershipPass(
+            branch_id=branch_other.id, name="다른", cash_price=1, card_price=1,
+        )
+        db.add_all([p_mine, p_other]); db.commit()
+        db.refresh(p_mine); db.refresh(p_other)
+        _make_member(db, branch, p_mine.id, "NAVER", "WEIGHT_LOSS", "01000000301")
+        _make_member(
+            db, branch_other, p_other.id, "NAVER", "WEIGHT_LOSS", "01000000302",
+        )
+
+        res = client.get("/admin/stats/category", headers=auth_fc)
+        # FC는 본인 지점(branch)만 → 1건만 보임
+        assert res.json()["member"]["total"] == 1
+
+    def test_month_param(self, client, db, auth_super, branch):
+        """과거 달 → 0"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        _make_member(db, branch, p.id, "NAVER", "WEIGHT_LOSS", "01000000001")
+
+        res = client.get(
+            "/admin/stats/category?month=2020-01", headers=auth_super,
+        )
+        assert res.status_code == 200
+        assert res.json()["member"]["total"] == 0
+
+
+class TestMembershipExpiryStats:
+    """GET /admin/stats/membership-expiry - 잔여 기간 분포"""
+
+    def _put_member_with_end_date(
+        self, db, branch, pass_id, phone, end_date, status="REGISTERED",
+    ):
+        today = date.today()
+        m = Member(
+            branch_id=branch.id, membership_pass_id=pass_id,
+            name="만기테스트", gender="M", birth_date="1990-01-01",
+            phone=phone, address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=end_date,
+            motivation="WEIGHT_LOSS", agreed_terms=True,
+            status=status,
+        )
+        db.add(m); db.commit()
+
+    def test_empty(self, client, auth_super, branch):
+        """회원 없을 때 6구간 다 0"""
+        res = client.get("/admin/stats/membership-expiry", headers=auth_super)
+        assert res.status_code == 200
+        body = res.json()
+        codes = [it["code"] for it in body["items"]]
+        assert codes == ["M1", "M1_2", "M2_3", "M3_6", "M6_12", "M12P"]
+        assert all(it["count"] == 0 for it in body["items"])
+        assert body["total"] == 0
+
+    def test_bucket_classification(self, client, db, auth_super, branch):
+        """경계 일수마다 정확한 구간 - 30/60/90/180/365/그 이후"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        today = date.today()
+        # 각 구간 정확히 1명씩
+        scenarios = [
+            ("01000050001", today + timedelta(days=30),  "M1"),
+            ("01000050002", today + timedelta(days=60),  "M1_2"),
+            ("01000050003", today + timedelta(days=90),  "M2_3"),
+            ("01000050004", today + timedelta(days=180), "M3_6"),
+            ("01000050005", today + timedelta(days=365), "M6_12"),
+            ("01000050006", today + timedelta(days=400), "M12P"),
+        ]
+        for phone, ed, _ in scenarios:
+            self._put_member_with_end_date(db, branch, p.id, phone, ed)
+
+        res = client.get("/admin/stats/membership-expiry", headers=auth_super)
+        items = {it["code"]: it["count"] for it in res.json()["items"]}
+        for _, _, code in scenarios:
+            assert items[code] == 1, f"{code} should be 1, got {items[code]}"
+        assert res.json()["total"] == 6
+
+    def test_excludes_held_and_expired(self, client, db, auth_super, branch):
+        """HELD·EXPIRED 회원 + 이미 만기 지난 REGISTERED 제외"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        today = date.today()
+        # 응답에 포함돼야 함 - REGISTERED + 미래 만기
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000060001", today + timedelta(days=10),
+        )
+        # 제외 - HELD
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000060002",
+            today + timedelta(days=10), status="HELD",
+        )
+        # 제외 - EXPIRED
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000060003",
+            today + timedelta(days=10), status="EXPIRED",
+        )
+        # 제외 - 이미 만기 지난 REGISTERED (status 미정리 케이스)
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000060004", today - timedelta(days=1),
+        )
+
+        res = client.get("/admin/stats/membership-expiry", headers=auth_super)
+        assert res.json()["total"] == 1
+
+    def test_fc_scoped_to_own_branch(
+        self, client, db, auth_fc, branch, branch_other,
+    ):
+        """FC는 본인 지점 회원만"""
+        p_mine = MembershipPass(
+            branch_id=branch.id, name="A", cash_price=1, card_price=1,
+        )
+        p_other = MembershipPass(
+            branch_id=branch_other.id, name="B", cash_price=1, card_price=1,
+        )
+        db.add_all([p_mine, p_other]); db.commit()
+        db.refresh(p_mine); db.refresh(p_other)
+        today = date.today()
+        self._put_member_with_end_date(
+            db, branch, p_mine.id, "01000070001",
+            today + timedelta(days=10),
+        )
+        self._put_member_with_end_date(
+            db, branch_other, p_other.id, "01000070002",
+            today + timedelta(days=10),
+        )
+
+        res = client.get("/admin/stats/membership-expiry", headers=auth_fc)
+        assert res.json()["total"] == 1
