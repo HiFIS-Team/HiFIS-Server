@@ -461,3 +461,111 @@ class TestCategoryStats:
         )
         assert res.status_code == 200
         assert res.json()["member"]["total"] == 0
+
+
+class TestMembershipExpiryStats:
+    """GET /admin/stats/membership-expiry - 잔여 기간 분포"""
+
+    def _put_member_with_end_date(
+        self, db, branch, pass_id, phone, end_date, status="REGISTERED",
+    ):
+        today = date.today()
+        m = Member(
+            branch_id=branch.id, membership_pass_id=pass_id,
+            name="만기테스트", gender="M", birth_date="1990-01-01",
+            phone=phone, address="광주",
+            referral="NAVER", payment_method="CARD", final_price=1,
+            start_date=today, end_date=end_date,
+            motivation="WEIGHT_LOSS", agreed_terms=True,
+            status=status,
+        )
+        db.add(m); db.commit()
+
+    def test_empty(self, client, auth_super, branch):
+        """회원 없을 때 6구간 다 0"""
+        res = client.get("/admin/stats/membership-expiry", headers=auth_super)
+        assert res.status_code == 200
+        body = res.json()
+        codes = [it["code"] for it in body["items"]]
+        assert codes == ["M1", "M1_2", "M2_3", "M3_6", "M6_12", "M12P"]
+        assert all(it["count"] == 0 for it in body["items"])
+        assert body["total"] == 0
+
+    def test_bucket_classification(self, client, db, auth_super, branch):
+        """경계 일수마다 정확한 구간 - 30/60/90/180/365/그 이후"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        today = date.today()
+        # 각 구간 정확히 1명씩
+        scenarios = [
+            ("01000050001", today + timedelta(days=30),  "M1"),
+            ("01000050002", today + timedelta(days=60),  "M1_2"),
+            ("01000050003", today + timedelta(days=90),  "M2_3"),
+            ("01000050004", today + timedelta(days=180), "M3_6"),
+            ("01000050005", today + timedelta(days=365), "M6_12"),
+            ("01000050006", today + timedelta(days=400), "M12P"),
+        ]
+        for phone, ed, _ in scenarios:
+            self._put_member_with_end_date(db, branch, p.id, phone, ed)
+
+        res = client.get("/admin/stats/membership-expiry", headers=auth_super)
+        items = {it["code"]: it["count"] for it in res.json()["items"]}
+        for _, _, code in scenarios:
+            assert items[code] == 1, f"{code} should be 1, got {items[code]}"
+        assert res.json()["total"] == 6
+
+    def test_excludes_held_and_expired(self, client, db, auth_super, branch):
+        """HELD·EXPIRED 회원 + 이미 만기 지난 REGISTERED 제외"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        today = date.today()
+        # 응답에 포함돼야 함 - REGISTERED + 미래 만기
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000060001", today + timedelta(days=10),
+        )
+        # 제외 - HELD
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000060002",
+            today + timedelta(days=10), status="HELD",
+        )
+        # 제외 - EXPIRED
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000060003",
+            today + timedelta(days=10), status="EXPIRED",
+        )
+        # 제외 - 이미 만기 지난 REGISTERED (status 미정리 케이스)
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000060004", today - timedelta(days=1),
+        )
+
+        res = client.get("/admin/stats/membership-expiry", headers=auth_super)
+        assert res.json()["total"] == 1
+
+    def test_fc_scoped_to_own_branch(
+        self, client, db, auth_fc, branch, branch_other,
+    ):
+        """FC는 본인 지점 회원만"""
+        p_mine = MembershipPass(
+            branch_id=branch.id, name="A", cash_price=1, card_price=1,
+        )
+        p_other = MembershipPass(
+            branch_id=branch_other.id, name="B", cash_price=1, card_price=1,
+        )
+        db.add_all([p_mine, p_other]); db.commit()
+        db.refresh(p_mine); db.refresh(p_other)
+        today = date.today()
+        self._put_member_with_end_date(
+            db, branch, p_mine.id, "01000070001",
+            today + timedelta(days=10),
+        )
+        self._put_member_with_end_date(
+            db, branch_other, p_other.id, "01000070002",
+            today + timedelta(days=10),
+        )
+
+        res = client.get("/admin/stats/membership-expiry", headers=auth_fc)
+        assert res.json()["total"] == 1

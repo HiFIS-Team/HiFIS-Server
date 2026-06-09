@@ -35,6 +35,17 @@ from app.schemas.admin.stats import (
 _CATEGORY_LABELS = {"NEW": "신규", "EXISTING": "재등록"}
 _CATEGORY_ORDER = ["NEW", "EXISTING"]
 
+# 잔여 기간 구간 (일 단위 상한, code, label). 프론트 표시 라벨도 동일.
+# 위에서 아래 순서로 매칭 - 첫 매치 시 종료. M12P는 fallback.
+_EXPIRY_BUCKETS = [
+    (30,  "M1",    "1개월 이하"),
+    (60,  "M1_2",  "1~2개월"),
+    (90,  "M2_3",  "2~3개월"),
+    (180, "M3_6",  "3~6개월"),
+    (365, "M6_12", "6~12개월"),
+]
+_EXPIRY_FALLBACK = ("M12P", "12개월 초과")
+
 _KST = ZoneInfo("Asia/Seoul")
 
 
@@ -297,6 +308,53 @@ def get_pass_sales_stats(
             effective_branch_id, month_start, next_month_start,
         ),
     )
+
+
+def get_membership_expiry_stats(
+    db: Session,
+    branch_id: UUID | None,
+    current_admin: Admin,
+) -> StatsResponse:
+    """회원권 잔여 기간 분포 - status=REGISTERED + end_date >= 오늘.
+
+    잔여 일수 (end_date - today) 기준 6구간 분류.
+    경계는 _EXPIRY_BUCKETS 참조 (30/60/90/180/365 + 12개월 초과).
+
+    오늘 기준은 KST (DB 세션 TZ와 일관성).
+    """
+    effective_branch_id = resolve_branch_filter(current_admin, branch_id)
+    today = datetime.now(_KST).date()
+
+    q = db.query(Member.end_date).filter(
+        Member.status == "REGISTERED",
+        Member.end_date >= today,
+    )
+    if effective_branch_id is not None:
+        q = q.filter(Member.branch_id == effective_branch_id)
+
+    counts: dict[str, int] = {code: 0 for _, code, _ in _EXPIRY_BUCKETS}
+    counts[_EXPIRY_FALLBACK[0]] = 0
+
+    for (end_date,) in q.all():
+        days_left = (end_date - today).days
+        for upper, code, _ in _EXPIRY_BUCKETS:
+            if days_left <= upper:
+                counts[code] += 1
+                break
+        else:
+            counts[_EXPIRY_FALLBACK[0]] += 1
+
+    items = [
+        StatItem(code=code, label=label, count=counts[code])
+        for _, code, label in _EXPIRY_BUCKETS
+    ]
+    items.append(StatItem(
+        code=_EXPIRY_FALLBACK[0],
+        label=_EXPIRY_FALLBACK[1],
+        count=counts[_EXPIRY_FALLBACK[0]],
+    ))
+    total = sum(item.count for item in items)
+    return StatsResponse(items=items, total=total)
 
 
 def _category_breakdown(
