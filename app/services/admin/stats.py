@@ -37,12 +37,20 @@ _CATEGORY_ORDER = ["NEW", "EXISTING"]
 
 # 잔여 기간 구간 (일 단위 상한, code, label). 프론트 표시 라벨도 동일.
 # 위에서 아래 순서로 매칭 - 첫 매치 시 종료. M12P는 fallback.
+# 30일 단위 12구간 + 12개월 초과 → 총 13구간.
 _EXPIRY_BUCKETS = [
-    (30,  "M1",    "1개월 이하"),
-    (60,  "M1_2",  "1~2개월"),
-    (90,  "M2_3",  "2~3개월"),
-    (180, "M3_6",  "3~6개월"),
-    (365, "M6_12", "6~12개월"),
+    (30,  "M1",     "1개월 이하"),
+    (60,  "M1_2",   "1~2개월"),
+    (90,  "M2_3",   "2~3개월"),
+    (120, "M3_4",   "3~4개월"),
+    (150, "M4_5",   "4~5개월"),
+    (180, "M5_6",   "5~6개월"),
+    (210, "M6_7",   "6~7개월"),
+    (240, "M7_8",   "7~8개월"),
+    (270, "M8_9",   "8~9개월"),
+    (300, "M9_10",  "9~10개월"),
+    (330, "M10_11", "10~11개월"),
+    (360, "M11_12", "11~12개월"),
 ]
 _EXPIRY_FALLBACK = ("M12P", "12개월 초과")
 
@@ -341,20 +349,28 @@ def get_membership_expiry_stats(
     db: Session,
     branch_id: UUID | None,
     current_admin: Admin,
+    month: str | None = None,
 ) -> StatsResponse:
-    """회원권 잔여 기간 분포 - status=REGISTERED + end_date >= 오늘.
+    """회원권 잔여 기간 분포 - status=REGISTERED + end_date >= 기준일.
 
-    잔여 일수 (end_date - today) 기준 6구간 분류.
-    경계는 _EXPIRY_BUCKETS 참조 (30/60/90/180/365 + 12개월 초과).
+    기준일:
+    - month 미지정: 오늘 (KST)
+    - month=YYYY-MM: 해당 월 1일
 
-    오늘 기준은 KST (DB 세션 TZ와 일관성).
+    잔여 일수 (end_date - 기준일) 기준 13구간 분류 (_EXPIRY_BUCKETS 참조,
+    30일 단위 12 + 12개월 초과). 기준일 이미 지난 회원은 제외.
     """
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
-    today = datetime.now(_KST).date()
+    if month is None:
+        anchor_date = datetime.now(_KST).date()
+    else:
+        # _month_range 재사용 - 잘못된 형식은 400
+        month_start, _ = _month_range(month)
+        anchor_date = month_start.date()
 
     q = db.query(Member.end_date).filter(
         Member.status == "REGISTERED",
-        Member.end_date >= today,
+        Member.end_date >= anchor_date,
     )
     if effective_branch_id is not None:
         q = q.filter(Member.branch_id == effective_branch_id)
@@ -363,7 +379,7 @@ def get_membership_expiry_stats(
     counts[_EXPIRY_FALLBACK[0]] = 0
 
     for (end_date,) in q.all():
-        days_left = (end_date - today).days
+        days_left = (end_date - anchor_date).days
         for upper, code, _ in _EXPIRY_BUCKETS:
             if days_left <= upper:
                 counts[code] += 1
