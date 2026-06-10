@@ -281,6 +281,9 @@ def _pass_category(
             code=str(p.id),
             label=p.name,
             count=counts[p.id],
+            # price·revenue 같이 묶여서 회원권/PT만 채움.
+            # price는 정가(cash_price), revenue는 실 결제 합산(final_price).
+            price=p.cash_price if include_revenue else None,
             revenue=revenues[p.id] if include_revenue else None,
         )
         for p in passes

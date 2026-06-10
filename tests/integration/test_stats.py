@@ -409,7 +409,7 @@ class TestPassSalesStats:
     def test_locker_clothes_revenue_is_null(
         self, client, db, auth_super, branch,
     ):
-        """락커/운동복 - 부가 항목이라 revenue=None (필드는 응답에 있되 null)"""
+        """락커/운동복 - 부가 항목이라 revenue/price=None"""
         from app.models.passes.locker import LockerPass
         from app.models.passes.clothes import ClothesPass
         mp = MembershipPass(
@@ -437,13 +437,30 @@ class TestPassSalesStats:
         db.add(m); db.commit()
 
         body = client.get("/admin/stats/passes", headers=auth_super).json()
-        # 락커/운동복 items의 revenue는 None
+        # 락커/운동복 items의 revenue·price 모두 None
         for category in ("locker", "clothes"):
             for it in body[category]["items"]:
                 assert it["revenue"] is None
-        # 회원권 items의 revenue는 채워짐
+                assert it["price"] is None
+        # 회원권 items는 revenue·price 둘 다 채워짐
         for it in body["membership"]["items"]:
             assert isinstance(it["revenue"], int)
+            assert isinstance(it["price"], int)
+
+    def test_membership_price_is_cash_price(
+        self, client, db, auth_super, branch,
+    ):
+        """회원권 price는 정가(cash_price) 그대로 - 등록 회원 수와 무관"""
+        p = MembershipPass(
+            branch_id=branch.id, name="3개월", cash_price=200000, card_price=220000,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        items = {it["code"]: it for it in res.json()["membership"]["items"]}
+        # 등록자 0명이어도 price는 정가 그대로
+        assert items[str(p.id)]["price"] == 200000
+        assert items[str(p.id)]["count"] == 0
 
 
 class TestCategoryStats:
