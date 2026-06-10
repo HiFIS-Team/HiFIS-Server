@@ -220,6 +220,25 @@ class TestTemplateBody:
         assert "{sender_position}" in d_plus_7["header_template"]
         assert "안녕하세요" in d_plus_7["header_template"]
 
+    def test_no_emoji_in_default_body_or_footer(
+        self, client, auth_super, seeded_templates,
+    ):
+        """LMS 호환 - 코드 디폴트 본문·푸터 템플릿에 이모지 없음"""
+        import re
+        emoji_re = re.compile(r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF]")
+
+        res = client.get("/admin/alimtalk-templates", headers=auth_super)
+        for t in res.json():
+            assert not emoji_re.search(t["default_body"]), (
+                f"{t['trigger_type']} default_body에 이모지: "
+                f"{emoji_re.findall(t['default_body'])}"
+            )
+            if t["footer_template"]:
+                assert not emoji_re.search(t["footer_template"]), (
+                    f"{t['trigger_type']} footer에 이모지: "
+                    f"{emoji_re.findall(t['footer_template'])}"
+                )
+
     def test_patch_body_updates(self, client, db, auth_super, seeded_templates):
         """PATCH body로 본문 수정"""
         template = db.query(AlimtalkTemplate).filter(
@@ -339,7 +358,7 @@ class TestPreviewTemplate:
         assert "홍길동" in preview
         assert branch.name in preview
         # 푸터: 지점 표시
-        assert "🚩" in preview
+        assert f"[{branch.name}]" in preview
         # 본문 일부 (REGISTERED 디폴트)
         assert "선택해 주셔서" in preview
 
@@ -370,7 +389,8 @@ class TestPreviewTemplate:
         assert "박매니저" in preview
         assert "점장" in preview   # MANAGER → 점장
         # 안부 톤은 푸터 없음
-        assert "🚩" not in preview
+        # 안부 톤은 푸터 자체가 없음 - 상담문의 라벨도 안 들어가야
+        assert "[상담문의]" not in preview
 
     def test_preview_uses_request_body_override(
         self, client, db, auth_super, branch, seeded_templates,

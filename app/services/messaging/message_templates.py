@@ -14,8 +14,9 @@ _PERSONAL_HEADER = "{name}님 안녕하세요 :) {branch_name} {sender_name} {se
 # 시스템 트리거 푸터 raw 템플릿 (어드민 미리보기 표시용).
 # 발송 시점엔 _build_footer가 naver_place_url 유무에 따라 동적 조립 - 미리보기는
 # 사장님이 변수 위치 확인할 수 있게 전체 라인 노출.
+# 이모지는 LMS에서 깨져서 안 보이므로 텍스트 라벨로만 구성.
 _FOOTER_TEMPLATE = (
-    "🚩{branch_name}\n[상담문의]\n📞{branch_phone}\n"
+    "[{branch_name}]\n[상담문의]\n{branch_phone}\n"
     "[네이버 플레이스]\n{naver_place_url}"
 )
 
@@ -42,11 +43,11 @@ _BODIES: dict[str, str] = {
 이후 등록 시 정상가 적용""",
 
     TriggerType.RESERVATION_CHECK_1.value: """지난번 상담받으셨던 골든타임 이벤트, 적용 기간이 4일 남았어요.
-혹시 등록 아직 고민 중이신가요?🙂""",
+혹시 등록 아직 고민 중이신가요?""",
 
     TriggerType.RESERVATION_CHECK_2.value: """지난번 상담받으셨던 골든타임 이벤트, 내일이 마감일이에요.
 마감 후에는 정상가로만 등록 가능합니다.
-혹시 등록 아직 고민 중이신가요?🙂""",
+혹시 등록 아직 고민 중이신가요?""",
 
     TriggerType.REGISTERED.value: """인생의 모든 순간이 선택의 순간이라고 생각합니다. 저희를 선택해 주셔서 진심으로 감사드립니다.
 회원님의 하루 운동이 가족과 함께할 수 있는 시간을 늘려줍니다. 항상 회원님 가정에 행복한 일들만 가득하시길 기원하겠습니다.""",
@@ -94,7 +95,7 @@ _BODIES: dict[str, str] = {
 
     TriggerType.EXPIRED_FOLLOWUP.value: """운동은 쉬는 기간이 길어질수록 다시 시작하기 더 어려워집니다.
 패턴을 잃기 전에, 무리 없이 리듬을 되찾으실 수 있도록 도와드리겠습니다.
-언제든 편하게 연락 주세요🙂
+언제든 편하게 연락 주세요.
 
 [회복 리턴 패키지]
 문자 수신 후 5일 이내 등록 시 10% 할인
@@ -104,11 +105,14 @@ _BODIES: dict[str, str] = {
 def _build_footer(
     branch_name: str, branch_phone: str, naver_place_url: str | None
 ) -> str:
-    """지점별 푸터 생성 - 네이버 링크는 있을 때만 표시 (카카오는 추후 추가 예정)"""
+    """지점별 푸터 생성 - 네이버 링크는 있을 때만 표시 (카카오는 추후 추가 예정).
+
+    LMS에서 이모지(🚩·📞) 깨짐 → 텍스트 라벨([상담문의] 등)만 사용.
+    """
     lines = [
-        f"🚩{branch_name}",
+        f"[{branch_name}]",
         "[상담문의]",
-        f"📞{branch_phone}",
+        branch_phone,
     ]
     if naver_place_url:
         lines.append("[네이버 플레이스]")

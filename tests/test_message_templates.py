@@ -37,8 +37,8 @@ class TestRenderMessage:
             branch_name="화순점",
             branch_phone="050-1234-5678",
         )
-        assert "🚩화순점" in msg
-        assert "📞050-1234-5678" in msg
+        assert "[화순점]" in msg
+        assert "050-1234-5678" in msg
 
     def test_naver_link_shown_when_provided(self):
         msg = render_message(
@@ -119,7 +119,7 @@ class TestRenderPersonalMessage:
         assert "홍길동님 안녕하세요 :) 화순점 전상현 FC 입니다." in msg
 
     def test_personal_trigger_no_footer(self):
-        """안부 트리거에는 푸터(🚩지점·전화·네이버) 없음"""
+        """안부 트리거에는 푸터(지점·전화·네이버 라벨) 없음"""
         msg = render_message(
             trigger=TriggerType.EXPIRY_SOON_5.value,
             name="홍길동",
@@ -129,7 +129,6 @@ class TestRenderPersonalMessage:
             sender_name="전상현",
             sender_position="FC",
         )
-        assert "🚩" not in msg
         assert "[상담문의]" not in msg
         assert "[네이버 플레이스]" not in msg
 
@@ -155,7 +154,7 @@ class TestRenderPersonalMessage:
             branch_phone="050-1111-2222",
         )
         assert "홍길동님 화순점 입니다!" in msg
-        assert "🚩화순점" in msg
+        assert "[화순점]" in msg
 
     def test_system_trigger_ignores_sender(self):
         """시스템 트리거에 sender 정보 줘도 시스템 양식 그대로 (영향 X)"""
@@ -172,4 +171,4 @@ class TestRenderPersonalMessage:
         # 자기소개 헤더 X
         assert "안녕하세요 :)" not in msg
         # 푸터 유지
-        assert "🚩화순점" in msg
+        assert "[화순점]" in msg
