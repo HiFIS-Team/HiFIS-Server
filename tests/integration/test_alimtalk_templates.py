@@ -38,10 +38,11 @@ class TestListTemplates:
         # 디폴트 is_enabled=True
         assert all(t["is_enabled"] is True for t in body)
 
-    def test_fc_forbidden(self, client, auth_fc, seeded_templates):
-        """FC는 접근 차단 - SUPER_ADMIN 전용"""
+    def test_fc_allowed(self, client, auth_fc, seeded_templates):
+        """FC도 목록 조회 가능 (전 지점 공통 템플릿)"""
         res = client.get("/admin/alimtalk-templates", headers=auth_fc)
-        assert res.status_code == 403
+        assert res.status_code == 200
+        assert len(res.json()) >= len(seeded_templates)
 
 
 class TestUpdateTemplate:
@@ -79,6 +80,20 @@ class TestUpdateTemplate:
             json={"is_enabled": False},
         )
         assert res.status_code == 404
+
+    def test_fc_can_update(self, client, db, auth_fc, seeded_templates):
+        """FC도 토글/본문 수정 가능 (전 지점 공통이라 권한 동일)"""
+        template = db.query(AlimtalkTemplate).filter(
+            AlimtalkTemplate.trigger_type == "REGISTERED",
+        ).first()
+        res = client.patch(
+            f"/admin/alimtalk-templates/{template.id}",
+            headers=auth_fc,
+            json={"is_enabled": False, "body": "FC가 편집한 본문"},
+        )
+        assert res.status_code == 200
+        assert res.json()["is_enabled"] is False
+        assert res.json()["body"] == "FC가 편집한 본문"
 
 
 class TestSendMessageRespectsTrigger:
@@ -435,15 +450,16 @@ class TestPreviewTemplate:
         )
         assert res.status_code == 404
 
-    def test_preview_fc_forbidden(
+    def test_preview_fc_allowed(
         self, client, db, auth_fc, branch, seeded_templates,
     ):
-        """FC는 미리보기도 차단"""
+        """FC도 미리보기 호출 가능"""
         template = db.query(AlimtalkTemplate).filter(
             AlimtalkTemplate.trigger_type == "REGISTERED",
         ).first()
         res = client.post(
             f"/admin/alimtalk-templates/{template.id}/preview",
-            headers=auth_fc, json={},
+            headers=auth_fc, json={"branch_id": str(branch.id)},
         )
-        assert res.status_code == 403
+        assert res.status_code == 200
+        assert "preview" in res.json()
