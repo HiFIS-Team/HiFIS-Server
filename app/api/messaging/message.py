@@ -6,7 +6,7 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.deps import get_db
@@ -51,3 +51,18 @@ def admin_get_message(
 ):
     """메시지 단건 조회 (Admin)"""
     return message_service.get_message(db, message_id, current_admin)
+
+
+@admin_router.delete(
+    "/{message_id}", status_code=status.HTTP_204_NO_CONTENT,
+)
+def admin_delete_message(
+    message_id: UUID,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """메시지 이력 삭제 (Admin) - 발송된 알림톡 회수 X, 어드민 기록만 제거.
+
+    FC는 본인 지점 이력만. 없으면 404.
+    """
+    message_service.delete_message(db, message_id, current_admin)

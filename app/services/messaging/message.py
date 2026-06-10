@@ -182,3 +182,19 @@ def get_message(db: Session, message_id: UUID, current_admin: Admin) -> Message:
         )
     assert_branch_access(current_admin, msg.branch_id)
     return msg
+
+
+def delete_message(
+    db: Session, message_id: UUID, current_admin: Admin,
+) -> None:
+    """메시지 이력 행 삭제 - 실 발송된 알림톡 회수 X, 어드민 기록만 제거.
+
+    FC는 자기 지점 이력만 삭제. 없으면 404.
+    """
+    msg = get_message(db, message_id, current_admin)
+    db.delete(msg)
+    db.commit()
+    logger.info(
+        "메시지 이력 삭제: message_id=%s, branch_id=%s, trigger=%s",
+        message_id, msg.branch_id, msg.trigger_type,
+    )
