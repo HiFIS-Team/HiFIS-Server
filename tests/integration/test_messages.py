@@ -129,3 +129,66 @@ class TestGetMessage:
     def test_get_nonexistent_404(self, client, auth_super):
         res = client.get(f"/admin/messages/{uuid4()}", headers=auth_super)
         assert res.status_code == 404
+
+
+class TestDeleteMessage:
+
+    @pytest.fixture
+    def messaging_on(self, db, branch):
+        """발송 토글 ON 시뮬레이션 (디폴트는 OFF라 send_message → None)"""
+        from app.services.admin.system_config import get_system_config
+        cfg = get_system_config(db)
+        cfg.messaging_enabled = True
+        branch.messaging_enabled = True
+        db.commit()
+
+    def test_delete_message_204(
+        self, client, db, branch, auth_super, messaging_on,
+    ):
+        """SUPER_ADMIN 본인이 보낸 거 삭제 → 204, row 사라짐"""
+        from app.models.messaging.message import Message
+        msg = message_service.send_message(db, _send_request(branch))
+        msg_id = msg.id
+
+        res = client.delete(f"/admin/messages/{msg_id}", headers=auth_super)
+        assert res.status_code == 204
+
+        # row 진짜 사라짐
+        assert db.query(Message).filter(Message.id == msg_id).first() is None
+
+    def test_delete_nonexistent_404(self, client, auth_super):
+        res = client.delete(
+            f"/admin/messages/{uuid4()}", headers=auth_super,
+        )
+        assert res.status_code == 404
+
+    def test_fc_can_delete_own_branch(
+        self, client, db, branch, auth_fc, messaging_on,
+    ):
+        """FC도 본인 지점 이력은 삭제 가능"""
+        from app.models.messaging.message import Message
+        msg = message_service.send_message(db, _send_request(branch))
+
+        res = client.delete(f"/admin/messages/{msg.id}", headers=auth_fc)
+        assert res.status_code == 204
+        assert db.query(Message).filter(Message.id == msg.id).first() is None
+
+    def test_fc_cannot_delete_other_branch_404(
+        self, client, db, branch_other, auth_fc,
+    ):
+        """FC가 타 지점 이력 삭제 시도 → 404 (정보 노출 최소화)"""
+        from app.models.messaging.message import Message
+        from app.services.admin.system_config import get_system_config
+        cfg = get_system_config(db)
+        cfg.messaging_enabled = True
+        branch_other.messaging_enabled = True
+        db.commit()
+
+        msg = message_service.send_message(db, _send_request(
+            branch_other, recipient="01033333333",
+        ))
+
+        res = client.delete(f"/admin/messages/{msg.id}", headers=auth_fc)
+        assert res.status_code == 404
+        # row 살아있어야
+        assert db.query(Message).filter(Message.id == msg.id).first() is not None
