@@ -191,6 +191,35 @@ class TestTemplateBody:
         assert "sender_name" in keys
         assert "sender_position" in keys
 
+    def test_system_trigger_header_footer_templates(
+        self, client, auth_super, seeded_templates,
+    ):
+        """시스템 트리거 - 헤더·푸터 raw placeholder 그대로 (치환 X)"""
+        res = client.get("/admin/alimtalk-templates", headers=auth_super)
+        registered = next(
+            t for t in res.json() if t["trigger_type"] == "REGISTERED"
+        )
+        # 헤더: "{name}님 {branch_name} 입니다!"
+        assert "{name}" in registered["header_template"]
+        assert "{branch_name}" in registered["header_template"]
+        # 푸터: branch_name·phone·naver_place_url 변수 모두 노출
+        assert registered["footer_template"] is not None
+        assert "{branch_name}" in registered["footer_template"]
+        assert "{branch_phone}" in registered["footer_template"]
+        assert "{naver_place_url}" in registered["footer_template"]
+
+    def test_personal_trigger_footer_is_null(
+        self, client, auth_super, seeded_templates,
+    ):
+        """안부 트리거 - footer_template은 None, header는 안부 헤더"""
+        res = client.get("/admin/alimtalk-templates", headers=auth_super)
+        d_plus_7 = next(t for t in res.json() if t["trigger_type"] == "D_PLUS_7")
+        assert d_plus_7["footer_template"] is None
+        # 개인 헤더 - {sender_name}, {sender_position} 포함
+        assert "{sender_name}" in d_plus_7["header_template"]
+        assert "{sender_position}" in d_plus_7["header_template"]
+        assert "안녕하세요" in d_plus_7["header_template"]
+
     def test_patch_body_updates(self, client, db, auth_super, seeded_templates):
         """PATCH body로 본문 수정"""
         template = db.query(AlimtalkTemplate).filter(

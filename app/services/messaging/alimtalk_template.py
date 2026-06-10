@@ -15,7 +15,7 @@ from app.schemas.messaging.alimtalk_template import (
     AlimtalkVariable,
 )
 from app.services.messaging import message_templates
-from app.services.messaging.message_templates import _BODIES
+from app.services.messaging.message_templates import _BODIES, get_header_footer_for
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,8 @@ def _variables_for(trigger_code: str) -> list[AlimtalkVariable]:
 
 
 def _to_response_dict(template: AlimtalkTemplate) -> dict:
-    """Response 모델용 dict - default_body + variables 합쳐서"""
+    """Response 모델용 dict - default_body + variables + header/footer 템플릿"""
+    header_template, footer_template = get_header_footer_for(template.trigger_type)
     return {
         "id": template.id,
         "trigger_type": template.trigger_type,
@@ -51,6 +52,8 @@ def _to_response_dict(template: AlimtalkTemplate) -> dict:
         "body": template.body,
         "default_body": _BODIES.get(template.trigger_type, ""),
         "variables": _variables_for(template.trigger_type),
+        "header_template": header_template,
+        "footer_template": footer_template,
         "updated_at": template.updated_at,
     }
 

@@ -11,6 +11,25 @@ _HEADER = "{name}님 {branch_name} 입니다!"
 # 안부 트리거 공통 헤더 (발송자 자기소개)
 _PERSONAL_HEADER = "{name}님 안녕하세요 :) {branch_name} {sender_name} {sender_position} 입니다."
 
+# 시스템 트리거 푸터 raw 템플릿 (어드민 미리보기 표시용).
+# 발송 시점엔 _build_footer가 naver_place_url 유무에 따라 동적 조립 - 미리보기는
+# 사장님이 변수 위치 확인할 수 있게 전체 라인 노출.
+_FOOTER_TEMPLATE = (
+    "🚩{branch_name}\n[상담문의]\n📞{branch_phone}\n"
+    "[네이버 플레이스]\n{naver_place_url}"
+)
+
+
+def get_header_footer_for(trigger: str) -> tuple[str, str | None]:
+    """어드민 본문 다이얼로그용 raw 헤더/푸터 템플릿 (placeholder 미치환).
+
+    - 안부 트리거: (개인 헤더, None) - 푸터 없음
+    - 시스템 트리거: (시스템 헤더, 푸터 템플릿)
+    """
+    if trigger in {t.value for t in PERSONAL_TRIGGERS}:
+        return _PERSONAL_HEADER, None
+    return _HEADER, _FOOTER_TEMPLATE
+
 # 트리거별 본문 (헤더/푸터 제외) - 문장·줄바꿈·중복 정리, 사실 정보는 원본 유지
 _BODIES: dict[str, str] = {
     TriggerType.RESERVATION_CONFIRM.value: """예약이 정상적으로 접수되었습니다.
