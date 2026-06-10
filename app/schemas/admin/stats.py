@@ -2,10 +2,15 @@ from pydantic import BaseModel
 
 
 class StatItem(BaseModel):
-    """통계 항목 한 줄 (enum 기반)"""
+    """통계 항목 한 줄 (enum 기반)
+
+    revenue: 회원권/PT 매출 합산. 부가 항목(락커·운동복)이나 매출이 의미 없는
+    통계(유입경로·방문목적 등)에선 None.
+    """
     code: str
     label: str
     count: int
+    revenue: int | None = None
 
 
 class StatDetailItem(BaseModel):

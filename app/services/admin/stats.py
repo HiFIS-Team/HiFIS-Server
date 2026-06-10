@@ -228,6 +228,7 @@ def _pass_category(
     effective_branch_id: UUID | None,
     month_start: datetime,
     next_month_start: datetime,
+    include_revenue: bool = False,
 ) -> PassCategoryStats:
     """한 카테고리(회원권/PT/락커/운동복) 판매 집계.
 
@@ -236,6 +237,10 @@ def _pass_category(
         예) [Member.membership_pass_id] 또는 [Member.locker_pass_id]
     pt_fk_columns: PTApplication 테이블에서 참조하는 컬럼들
         예) [PTApplication.pt_pass_id] 또는 [PTApplication.locker_pass_id]
+    include_revenue: True면 final_price 합산해서 items[i].revenue 채움.
+        회원권/PT는 True (그 상품 row의 결제금액 = 매출). 락커/운동복은 부가
+        항목이라 final_price가 회원권 묶음 결제에 흡수되어 정확한 매출 분리
+        어려움 → False(None) 반환.
     """
     # 지점별 모든 pass (count=0이라도 응답에 포함)
     pass_q = db.query(pass_model)
@@ -244,18 +249,27 @@ def _pass_category(
     passes = pass_q.order_by(pass_model.created_at).all()
 
     counts: dict[str, int] = {p.id: 0 for p in passes}
+    revenues: dict[str, int] = {p.id: 0 for p in passes} if include_revenue else {}
 
     def _accumulate(model, fk_col):
-        q = db.query(fk_col, func.count().label("c")).filter(
+        cols = [fk_col, func.count().label("c")]
+        if include_revenue:
+            cols.append(
+                func.coalesce(func.sum(model.final_price), 0).label("rev"),
+            )
+        q = db.query(*cols).filter(
             model.created_at >= month_start,
             model.created_at < next_month_start,
             fk_col.is_not(None),
         )
         if effective_branch_id is not None:
             q = q.filter(model.branch_id == effective_branch_id)
-        for pass_id, c in q.group_by(fk_col).all():
-            if pass_id in counts:  # 지점 필터 후의 pass만 합산
+        for row in q.group_by(fk_col).all():
+            pass_id, c = row[0], row[1]
+            if pass_id in counts:
                 counts[pass_id] += c
+                if include_revenue:
+                    revenues[pass_id] += int(row[2] or 0)
 
     for col in member_fk_columns:
         _accumulate(Member, col)
@@ -263,7 +277,12 @@ def _pass_category(
         _accumulate(PTApplication, col)
 
     items = [
-        StatItem(code=str(p.id), label=p.name, count=counts[p.id])
+        StatItem(
+            code=str(p.id),
+            label=p.name,
+            count=counts[p.id],
+            revenue=revenues[p.id] if include_revenue else None,
+        )
         for p in passes
     ]
     total = sum(item.count for item in items)
@@ -291,21 +310,26 @@ def get_pass_sales_stats(
             db, MembershipPass,
             [Member.membership_pass_id], [],
             effective_branch_id, month_start, next_month_start,
+            include_revenue=True,
         ),
         pt=_pass_category(
             db, PTPass,
             [], [PTApplication.pt_pass_id],
             effective_branch_id, month_start, next_month_start,
+            include_revenue=True,
         ),
+        # 락커/운동복은 회원권 묶음 결제에 흡수되어 정확한 매출 분리 어려움 → None
         locker=_pass_category(
             db, LockerPass,
             [Member.locker_pass_id], [PTApplication.locker_pass_id],
             effective_branch_id, month_start, next_month_start,
+            include_revenue=False,
         ),
         clothes=_pass_category(
             db, ClothesPass,
             [Member.clothes_pass_id], [PTApplication.clothes_pass_id],
             effective_branch_id, month_start, next_month_start,
+            include_revenue=False,
         ),
     )
 

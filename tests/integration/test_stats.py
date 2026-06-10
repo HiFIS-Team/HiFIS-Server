@@ -353,6 +353,98 @@ class TestPassSalesStats:
         assert res.status_code == 200
         assert res.json()["membership"]["total"] == 0
 
+    def test_membership_revenue_sums_final_price(
+        self, client, db, auth_super, branch,
+    ):
+        """회원권 - final_price 합산이 revenue에 들어감"""
+        p1 = MembershipPass(
+            branch_id=branch.id, name="3개월", cash_price=200000, card_price=220000,
+        )
+        db.add(p1); db.commit(); db.refresh(p1)
+
+        # 두 회원, final_price 다르게
+        today = date.today()
+        for phone, price in [("01099110001", 200000), ("01099110002", 180000)]:
+            m = Member(
+                branch_id=branch.id, membership_pass_id=p1.id,
+                name="K", gender="M", birth_date="1990-01-01",
+                phone=phone, address="광주",
+                referral="NAVER", payment_method="CARD", final_price=price,
+                start_date=today, end_date=today + timedelta(days=90),
+                motivation="WEIGHT_LOSS", agreed_terms=True,
+            )
+            db.add(m)
+        db.commit()
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        items = {it["code"]: it for it in res.json()["membership"]["items"]}
+        assert items[str(p1.id)]["count"] == 2
+        assert items[str(p1.id)]["revenue"] == 380000  # 200000 + 180000
+
+    def test_pt_revenue_sums_pt_application_final_price(
+        self, client, db, auth_super, branch,
+    ):
+        """PT - PTApplication.final_price 합산"""
+        pp = PTPass(
+            branch_id=branch.id, name="PT 10회",
+            cash_price=500000, card_price=550000,
+        )
+        db.add(pp); db.commit(); db.refresh(pp)
+        today = date.today()
+        pt = PTApplication(
+            branch_id=branch.id, pt_pass_id=pp.id,
+            name="P", gender="M", birth_date="1990-01-01",
+            phone="01099220001", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=450000,
+            start_date=today, end_date=today + timedelta(days=60),
+            motivation="WEIGHT_LOSS", agreed_notice=True,
+        )
+        db.add(pt); db.commit()
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        items = res.json()["pt"]["items"]
+        assert items[0]["count"] == 1
+        assert items[0]["revenue"] == 450000
+
+    def test_locker_clothes_revenue_is_null(
+        self, client, db, auth_super, branch,
+    ):
+        """락커/운동복 - 부가 항목이라 revenue=None (필드는 응답에 있되 null)"""
+        from app.models.passes.locker import LockerPass
+        from app.models.passes.clothes import ClothesPass
+        mp = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        lp = LockerPass(
+            branch_id=branch.id, name="락커", cash_price=30000, card_price=33000,
+        )
+        cp = ClothesPass(
+            branch_id=branch.id, name="운동복", cash_price=20000, card_price=22000,
+        )
+        db.add_all([mp, lp, cp]); db.commit()
+        db.refresh(mp); db.refresh(lp); db.refresh(cp)
+
+        today = date.today()
+        m = Member(
+            branch_id=branch.id, membership_pass_id=mp.id,
+            locker_pass_id=lp.id, clothes_pass_id=cp.id,
+            name="L", gender="M", birth_date="1990-01-01",
+            phone="01099330001", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=150000,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS", agreed_terms=True,
+        )
+        db.add(m); db.commit()
+
+        body = client.get("/admin/stats/passes", headers=auth_super).json()
+        # 락커/운동복 items의 revenue는 None
+        for category in ("locker", "clothes"):
+            for it in body[category]["items"]:
+                assert it["revenue"] is None
+        # 회원권 items의 revenue는 채워짐
+        for it in body["membership"]["items"]:
+            assert isinstance(it["revenue"], int)
+
 
 class TestCategoryStats:
     """GET /admin/stats/category - 신규/재등록 회원·PT 묶음"""
