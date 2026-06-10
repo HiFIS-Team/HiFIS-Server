@@ -35,24 +35,16 @@ from app.schemas.admin.stats import (
 _CATEGORY_LABELS = {"NEW": "신규", "EXISTING": "재등록"}
 _CATEGORY_ORDER = ["NEW", "EXISTING"]
 
-# 잔여 기간 구간 (일 단위 상한, code, label). 프론트 표시 라벨도 동일.
-# 위에서 아래 순서로 매칭 - 첫 매치 시 종료. M12P는 fallback.
-# 30일 단위 12구간 + 12개월 초과 → 총 13구간.
-_EXPIRY_BUCKETS = [
-    (30,  "M1",     "1개월 이하"),
-    (60,  "M1_2",   "1~2개월"),
-    (90,  "M2_3",   "2~3개월"),
-    (120, "M3_4",   "3~4개월"),
-    (150, "M4_5",   "4~5개월"),
-    (180, "M5_6",   "5~6개월"),
-    (210, "M6_7",   "6~7개월"),
-    (240, "M7_8",   "7~8개월"),
-    (270, "M8_9",   "8~9개월"),
-    (300, "M9_10",  "9~10개월"),
-    (330, "M10_11", "10~11개월"),
-    (360, "M11_12", "11~12개월"),
-]
-_EXPIRY_FALLBACK = ("M12P", "12개월 초과")
+# 잔여 기간 카테고리 - CEIL(days_left / 30) 기반 1~12개월 + 12개월 초과.
+# 응답 순서·라벨 단일 진실 (프론트 동일).
+_EXPIRY_MAX_MONTHS = 12
+_EXPIRY_CODES_ORDERED = (
+    [f"M{n}" for n in range(1, _EXPIRY_MAX_MONTHS + 1)] + ["M12P"]
+)
+_EXPIRY_LABELS: dict[str, str] = {
+    f"M{n}": f"{n}개월" for n in range(1, _EXPIRY_MAX_MONTHS + 1)
+}
+_EXPIRY_LABELS["M12P"] = "12개월 초과"
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -375,27 +367,23 @@ def get_membership_expiry_stats(
     if effective_branch_id is not None:
         q = q.filter(Member.branch_id == effective_branch_id)
 
-    counts: dict[str, int] = {code: 0 for _, code, _ in _EXPIRY_BUCKETS}
-    counts[_EXPIRY_FALLBACK[0]] = 0
+    counts: dict[str, int] = {code: 0 for code in _EXPIRY_CODES_ORDERED}
 
     for (end_date,) in q.all():
         days_left = (end_date - anchor_date).days
-        for upper, code, _ in _EXPIRY_BUCKETS:
-            if days_left <= upper:
-                counts[code] += 1
-                break
+        if days_left <= 0:
+            # 기준일 == 만기일(오늘 만기). 안전하게 "1개월" 구간으로.
+            code = "M1"
         else:
-            counts[_EXPIRY_FALLBACK[0]] += 1
+            # CEIL(days/30) — 1~30일→1, 31~60일→2, ..., 331~360일→12, 그 이상→12P
+            months = -(-days_left // 30)
+            code = "M12P" if months > _EXPIRY_MAX_MONTHS else f"M{months}"
+        counts[code] += 1
 
     items = [
-        StatItem(code=code, label=label, count=counts[code])
-        for _, code, label in _EXPIRY_BUCKETS
+        StatItem(code=code, label=_EXPIRY_LABELS[code], count=counts[code])
+        for code in _EXPIRY_CODES_ORDERED
     ]
-    items.append(StatItem(
-        code=_EXPIRY_FALLBACK[0],
-        label=_EXPIRY_FALLBACK[1],
-        count=counts[_EXPIRY_FALLBACK[0]],
-    ))
     total = sum(item.count for item in items)
     return StatsResponse(items=items, total=total)
 

@@ -590,45 +590,39 @@ class TestMembershipExpiryStats:
         )
         db.add(m); db.commit()
 
-    EXPECTED_CODES = [
-        "M1", "M1_2", "M2_3", "M3_4", "M4_5", "M5_6",
-        "M6_7", "M7_8", "M8_9", "M9_10", "M10_11", "M11_12",
-        "M12P",
-    ]
+    EXPECTED_CODES = [f"M{n}" for n in range(1, 13)] + ["M12P"]
+    EXPECTED_LABELS_BY_CODE = {**{f"M{n}": f"{n}개월" for n in range(1, 13)},
+                                "M12P": "12개월 초과"}
 
     def test_empty(self, client, auth_super, branch):
-        """회원 없을 때 13구간 다 0, 코드 순서 고정"""
+        """회원 없을 때 13구간 다 0, 코드·라벨 고정 순서"""
         res = client.get("/admin/stats/membership-expiry", headers=auth_super)
         assert res.status_code == 200
         body = res.json()
         codes = [it["code"] for it in body["items"]]
         assert codes == self.EXPECTED_CODES
-        assert all(it["count"] == 0 for it in body["items"])
+        for it in body["items"]:
+            assert it["label"] == self.EXPECTED_LABELS_BY_CODE[it["code"]]
+            assert it["count"] == 0
         assert body["total"] == 0
 
-    def test_bucket_classification(self, client, db, auth_super, branch):
-        """경계 일수마다 정확한 구간 - 30일 단위 12구간 + 초과"""
+    def test_bucket_classification_30day_multiples(
+        self, client, db, auth_super, branch,
+    ):
+        """30 배수 경계 - days=30→M1, 60→M2, ..., 360→M12, 400→M12P"""
         p = MembershipPass(
             branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
         )
         db.add(p); db.commit(); db.refresh(p)
         today = date.today()
-        # 각 구간 정확히 1명씩 (30일 단위)
-        scenarios = [
-            ("01000050001", today + timedelta(days=30),  "M1"),
-            ("01000050002", today + timedelta(days=60),  "M1_2"),
-            ("01000050003", today + timedelta(days=90),  "M2_3"),
-            ("01000050004", today + timedelta(days=120), "M3_4"),
-            ("01000050005", today + timedelta(days=150), "M4_5"),
-            ("01000050006", today + timedelta(days=180), "M5_6"),
-            ("01000050007", today + timedelta(days=210), "M6_7"),
-            ("01000050008", today + timedelta(days=240), "M7_8"),
-            ("01000050009", today + timedelta(days=270), "M8_9"),
-            ("01000050010", today + timedelta(days=300), "M9_10"),
-            ("01000050011", today + timedelta(days=330), "M10_11"),
-            ("01000050012", today + timedelta(days=360), "M11_12"),
-            ("01000050013", today + timedelta(days=400), "M12P"),
-        ]
+        scenarios = []
+        for n in range(1, 13):
+            scenarios.append((
+                f"010000500{n:02d}",
+                today + timedelta(days=30 * n),
+                f"M{n}",
+            ))
+        scenarios.append(("01000050099", today + timedelta(days=400), "M12P"))
         for phone, ed, _ in scenarios:
             self._put_member_with_end_date(db, branch, p.id, phone, ed)
 
@@ -638,17 +632,41 @@ class TestMembershipExpiryStats:
             assert items[code] == 1, f"{code} should be 1, got {items[code]}"
         assert res.json()["total"] == 13
 
+    def test_bucket_ceil_31_goes_to_m2(
+        self, client, db, auth_super, branch,
+    ):
+        """CEIL 동작 - days=31→M2, 32→M2, 61→M3 등 (30 다음 일은 다음 구간)"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        today = date.today()
+        # 31일 → CEIL(31/30) = 2 → M2
+        # 61일 → CEIL(61/30) = 3 → M3
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000051001", today + timedelta(days=31),
+        )
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000051002", today + timedelta(days=61),
+        )
+
+        res = client.get("/admin/stats/membership-expiry", headers=auth_super)
+        items = {it["code"]: it["count"] for it in res.json()["items"]}
+        assert items["M1"] == 0
+        assert items["M2"] == 1
+        assert items["M3"] == 1
+
     def test_month_anchor_shifts_remaining_days(
         self, client, db, auth_super, branch,
     ):
-        """month 지정 시 기준일이 해당 월 1일 → 잔여일 다르게 분류"""
+        """month 지정 시 기준일=해당 월 1일 → 잔여일 다르게 분류"""
         from datetime import datetime
         p = MembershipPass(
             branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
         )
         db.add(p); db.commit(); db.refresh(p)
-        # 만기 = 2027-03-01. 기준일=2027-01-01이면 잔여 59일(M1_2),
-        # 기준일=2027-02-01이면 잔여 28일(M1).
+        # 만기 = 2027-03-01. 기준일=2027-01-01이면 잔여 59일 → CEIL(59/30)=2 → M2,
+        # 기준일=2027-02-01이면 잔여 28일 → CEIL(28/30)=1 → M1.
         self._put_member_with_end_date(
             db, branch, p.id, "01000051000", datetime(2027, 3, 1).date(),
         )
@@ -657,7 +675,7 @@ class TestMembershipExpiryStats:
             "/admin/stats/membership-expiry?month=2027-01", headers=auth_super,
         )
         items_jan = {it["code"]: it["count"] for it in r1.json()["items"]}
-        assert items_jan["M1_2"] == 1
+        assert items_jan["M2"] == 1
         assert items_jan["M1"] == 0
 
         r2 = client.get(
@@ -665,7 +683,7 @@ class TestMembershipExpiryStats:
         )
         items_feb = {it["code"]: it["count"] for it in r2.json()["items"]}
         assert items_feb["M1"] == 1
-        assert items_feb["M1_2"] == 0
+        assert items_feb["M2"] == 0
 
     def test_month_anchor_excludes_already_expired(
         self, client, db, auth_super, branch,
