@@ -78,11 +78,17 @@ def get_category_stats(
 @admin_router.get("/membership-expiry", response_model=StatsResponse)
 def get_membership_expiry_stats(
     branch_id: UUID | None = None,
+    month: str | None = Query(
+        default=None, pattern=_MONTH_PATTERN,
+        description="YYYY-MM (예: 2026-08). 기준일=해당 월 1일. 미지정 시 오늘.",
+    ),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
 ):
-    """회원권 잔여 기간 분포 - REGISTERED 상태 + 미만기 회원의 잔여일 6구간 분포.
+    """회원권 잔여 기간 분포 - REGISTERED + end_date >= 기준일 회원의 13구간 분포.
 
-    FC는 자기 지점만. month 파라미터 없음 (실시간 잔여 기준).
+    FC는 자기 지점만. month 지정 시 그 월 1일 기준 잔여일로 분류.
     """
-    return stats_service.get_membership_expiry_stats(db, branch_id, current_admin)
+    return stats_service.get_membership_expiry_stats(
+        db, branch_id, current_admin, month,
+    )

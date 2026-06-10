@@ -353,6 +353,115 @@ class TestPassSalesStats:
         assert res.status_code == 200
         assert res.json()["membership"]["total"] == 0
 
+    def test_membership_revenue_sums_final_price(
+        self, client, db, auth_super, branch,
+    ):
+        """회원권 - final_price 합산이 revenue에 들어감"""
+        p1 = MembershipPass(
+            branch_id=branch.id, name="3개월", cash_price=200000, card_price=220000,
+        )
+        db.add(p1); db.commit(); db.refresh(p1)
+
+        # 두 회원, final_price 다르게
+        today = date.today()
+        for phone, price in [("01099110001", 200000), ("01099110002", 180000)]:
+            m = Member(
+                branch_id=branch.id, membership_pass_id=p1.id,
+                name="K", gender="M", birth_date="1990-01-01",
+                phone=phone, address="광주",
+                referral="NAVER", payment_method="CARD", final_price=price,
+                start_date=today, end_date=today + timedelta(days=90),
+                motivation="WEIGHT_LOSS", agreed_terms=True,
+            )
+            db.add(m)
+        db.commit()
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        items = {it["code"]: it for it in res.json()["membership"]["items"]}
+        assert items[str(p1.id)]["count"] == 2
+        assert items[str(p1.id)]["revenue"] == 380000  # 200000 + 180000
+
+    def test_pt_revenue_sums_pt_application_final_price(
+        self, client, db, auth_super, branch,
+    ):
+        """PT - PTApplication.final_price 합산"""
+        pp = PTPass(
+            branch_id=branch.id, name="PT 10회",
+            cash_price=500000, card_price=550000,
+        )
+        db.add(pp); db.commit(); db.refresh(pp)
+        today = date.today()
+        pt = PTApplication(
+            branch_id=branch.id, pt_pass_id=pp.id,
+            name="P", gender="M", birth_date="1990-01-01",
+            phone="01099220001", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=450000,
+            start_date=today, end_date=today + timedelta(days=60),
+            motivation="WEIGHT_LOSS", agreed_notice=True,
+        )
+        db.add(pt); db.commit()
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        items = res.json()["pt"]["items"]
+        assert items[0]["count"] == 1
+        assert items[0]["revenue"] == 450000
+
+    def test_locker_clothes_revenue_is_null(
+        self, client, db, auth_super, branch,
+    ):
+        """락커/운동복 - 부가 항목이라 revenue/price=None"""
+        from app.models.passes.locker import LockerPass
+        from app.models.passes.clothes import ClothesPass
+        mp = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        lp = LockerPass(
+            branch_id=branch.id, name="락커", cash_price=30000, card_price=33000,
+        )
+        cp = ClothesPass(
+            branch_id=branch.id, name="운동복", cash_price=20000, card_price=22000,
+        )
+        db.add_all([mp, lp, cp]); db.commit()
+        db.refresh(mp); db.refresh(lp); db.refresh(cp)
+
+        today = date.today()
+        m = Member(
+            branch_id=branch.id, membership_pass_id=mp.id,
+            locker_pass_id=lp.id, clothes_pass_id=cp.id,
+            name="L", gender="M", birth_date="1990-01-01",
+            phone="01099330001", address="광주",
+            referral="NAVER", payment_method="CARD", final_price=150000,
+            start_date=today, end_date=today + timedelta(days=30),
+            motivation="WEIGHT_LOSS", agreed_terms=True,
+        )
+        db.add(m); db.commit()
+
+        body = client.get("/admin/stats/passes", headers=auth_super).json()
+        # 락커/운동복 items의 revenue·price 모두 None
+        for category in ("locker", "clothes"):
+            for it in body[category]["items"]:
+                assert it["revenue"] is None
+                assert it["price"] is None
+        # 회원권 items는 revenue·price 둘 다 채워짐
+        for it in body["membership"]["items"]:
+            assert isinstance(it["revenue"], int)
+            assert isinstance(it["price"], int)
+
+    def test_membership_price_is_cash_price(
+        self, client, db, auth_super, branch,
+    ):
+        """회원권 price는 정가(cash_price) 그대로 - 등록 회원 수와 무관"""
+        p = MembershipPass(
+            branch_id=branch.id, name="3개월", cash_price=200000, card_price=220000,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+
+        res = client.get("/admin/stats/passes", headers=auth_super)
+        items = {it["code"]: it for it in res.json()["membership"]["items"]}
+        # 등록자 0명이어도 price는 정가 그대로
+        assert items[str(p.id)]["price"] == 200000
+        assert items[str(p.id)]["count"] == 0
+
 
 class TestCategoryStats:
     """GET /admin/stats/category - 신규/재등록 회원·PT 묶음"""
@@ -481,32 +590,39 @@ class TestMembershipExpiryStats:
         )
         db.add(m); db.commit()
 
+    EXPECTED_CODES = [f"M{n}" for n in range(1, 13)] + ["M12P"]
+    EXPECTED_LABELS_BY_CODE = {**{f"M{n}": f"{n}개월" for n in range(1, 13)},
+                                "M12P": "12개월 초과"}
+
     def test_empty(self, client, auth_super, branch):
-        """회원 없을 때 6구간 다 0"""
+        """회원 없을 때 13구간 다 0, 코드·라벨 고정 순서"""
         res = client.get("/admin/stats/membership-expiry", headers=auth_super)
         assert res.status_code == 200
         body = res.json()
         codes = [it["code"] for it in body["items"]]
-        assert codes == ["M1", "M1_2", "M2_3", "M3_6", "M6_12", "M12P"]
-        assert all(it["count"] == 0 for it in body["items"])
+        assert codes == self.EXPECTED_CODES
+        for it in body["items"]:
+            assert it["label"] == self.EXPECTED_LABELS_BY_CODE[it["code"]]
+            assert it["count"] == 0
         assert body["total"] == 0
 
-    def test_bucket_classification(self, client, db, auth_super, branch):
-        """경계 일수마다 정확한 구간 - 30/60/90/180/365/그 이후"""
+    def test_bucket_classification_30day_multiples(
+        self, client, db, auth_super, branch,
+    ):
+        """30 배수 경계 - days=30→M1, 60→M2, ..., 360→M12, 400→M12P"""
         p = MembershipPass(
             branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
         )
         db.add(p); db.commit(); db.refresh(p)
         today = date.today()
-        # 각 구간 정확히 1명씩
-        scenarios = [
-            ("01000050001", today + timedelta(days=30),  "M1"),
-            ("01000050002", today + timedelta(days=60),  "M1_2"),
-            ("01000050003", today + timedelta(days=90),  "M2_3"),
-            ("01000050004", today + timedelta(days=180), "M3_6"),
-            ("01000050005", today + timedelta(days=365), "M6_12"),
-            ("01000050006", today + timedelta(days=400), "M12P"),
-        ]
+        scenarios = []
+        for n in range(1, 13):
+            scenarios.append((
+                f"010000500{n:02d}",
+                today + timedelta(days=30 * n),
+                f"M{n}",
+            ))
+        scenarios.append(("01000050099", today + timedelta(days=400), "M12P"))
         for phone, ed, _ in scenarios:
             self._put_member_with_end_date(db, branch, p.id, phone, ed)
 
@@ -514,7 +630,86 @@ class TestMembershipExpiryStats:
         items = {it["code"]: it["count"] for it in res.json()["items"]}
         for _, _, code in scenarios:
             assert items[code] == 1, f"{code} should be 1, got {items[code]}"
-        assert res.json()["total"] == 6
+        assert res.json()["total"] == 13
+
+    def test_bucket_ceil_31_goes_to_m2(
+        self, client, db, auth_super, branch,
+    ):
+        """CEIL 동작 - days=31→M2, 32→M2, 61→M3 등 (30 다음 일은 다음 구간)"""
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        today = date.today()
+        # 31일 → CEIL(31/30) = 2 → M2
+        # 61일 → CEIL(61/30) = 3 → M3
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000051001", today + timedelta(days=31),
+        )
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000051002", today + timedelta(days=61),
+        )
+
+        res = client.get("/admin/stats/membership-expiry", headers=auth_super)
+        items = {it["code"]: it["count"] for it in res.json()["items"]}
+        assert items["M1"] == 0
+        assert items["M2"] == 1
+        assert items["M3"] == 1
+
+    def test_month_anchor_shifts_remaining_days(
+        self, client, db, auth_super, branch,
+    ):
+        """month 지정 시 기준일=해당 월 1일 → 잔여일 다르게 분류"""
+        from datetime import datetime
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        # 만기 = 2027-03-01. 기준일=2027-01-01이면 잔여 59일 → CEIL(59/30)=2 → M2,
+        # 기준일=2027-02-01이면 잔여 28일 → CEIL(28/30)=1 → M1.
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000051000", datetime(2027, 3, 1).date(),
+        )
+
+        r1 = client.get(
+            "/admin/stats/membership-expiry?month=2027-01", headers=auth_super,
+        )
+        items_jan = {it["code"]: it["count"] for it in r1.json()["items"]}
+        assert items_jan["M2"] == 1
+        assert items_jan["M1"] == 0
+
+        r2 = client.get(
+            "/admin/stats/membership-expiry?month=2027-02", headers=auth_super,
+        )
+        items_feb = {it["code"]: it["count"] for it in r2.json()["items"]}
+        assert items_feb["M1"] == 1
+        assert items_feb["M2"] == 0
+
+    def test_month_anchor_excludes_already_expired(
+        self, client, db, auth_super, branch,
+    ):
+        """month 기준일 이미 지난 회원은 집계 제외"""
+        from datetime import datetime
+        p = MembershipPass(
+            branch_id=branch.id, name="1개월", cash_price=1, card_price=1,
+        )
+        db.add(p); db.commit(); db.refresh(p)
+        # end_date = 2027-02-15. 기준일 2027-03-01엔 이미 만기 (2월 15일 < 3월 1일)
+        self._put_member_with_end_date(
+            db, branch, p.id, "01000052000", datetime(2027, 2, 15).date(),
+        )
+
+        res = client.get(
+            "/admin/stats/membership-expiry?month=2027-03", headers=auth_super,
+        )
+        assert res.json()["total"] == 0
+
+    def test_month_bad_format_422(self, client, auth_super):
+        """잘못된 month 형식 → 422"""
+        res = client.get(
+            "/admin/stats/membership-expiry?month=2026-13", headers=auth_super,
+        )
+        assert res.status_code == 422
 
     def test_excludes_held_and_expired(self, client, db, auth_super, branch):
         """HELD·EXPIRED 회원 + 이미 만기 지난 REGISTERED 제외"""

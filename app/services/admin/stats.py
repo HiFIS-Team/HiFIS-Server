@@ -35,16 +35,16 @@ from app.schemas.admin.stats import (
 _CATEGORY_LABELS = {"NEW": "신규", "EXISTING": "재등록"}
 _CATEGORY_ORDER = ["NEW", "EXISTING"]
 
-# 잔여 기간 구간 (일 단위 상한, code, label). 프론트 표시 라벨도 동일.
-# 위에서 아래 순서로 매칭 - 첫 매치 시 종료. M12P는 fallback.
-_EXPIRY_BUCKETS = [
-    (30,  "M1",    "1개월 이하"),
-    (60,  "M1_2",  "1~2개월"),
-    (90,  "M2_3",  "2~3개월"),
-    (180, "M3_6",  "3~6개월"),
-    (365, "M6_12", "6~12개월"),
-]
-_EXPIRY_FALLBACK = ("M12P", "12개월 초과")
+# 잔여 기간 카테고리 - CEIL(days_left / 30) 기반 1~12개월 + 12개월 초과.
+# 응답 순서·라벨 단일 진실 (프론트 동일).
+_EXPIRY_MAX_MONTHS = 12
+_EXPIRY_CODES_ORDERED = (
+    [f"M{n}" for n in range(1, _EXPIRY_MAX_MONTHS + 1)] + ["M12P"]
+)
+_EXPIRY_LABELS: dict[str, str] = {
+    f"M{n}": f"{n}개월" for n in range(1, _EXPIRY_MAX_MONTHS + 1)
+}
+_EXPIRY_LABELS["M12P"] = "12개월 초과"
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -228,6 +228,7 @@ def _pass_category(
     effective_branch_id: UUID | None,
     month_start: datetime,
     next_month_start: datetime,
+    include_revenue: bool = False,
 ) -> PassCategoryStats:
     """한 카테고리(회원권/PT/락커/운동복) 판매 집계.
 
@@ -236,6 +237,10 @@ def _pass_category(
         예) [Member.membership_pass_id] 또는 [Member.locker_pass_id]
     pt_fk_columns: PTApplication 테이블에서 참조하는 컬럼들
         예) [PTApplication.pt_pass_id] 또는 [PTApplication.locker_pass_id]
+    include_revenue: True면 final_price 합산해서 items[i].revenue 채움.
+        회원권/PT는 True (그 상품 row의 결제금액 = 매출). 락커/운동복은 부가
+        항목이라 final_price가 회원권 묶음 결제에 흡수되어 정확한 매출 분리
+        어려움 → False(None) 반환.
     """
     # 지점별 모든 pass (count=0이라도 응답에 포함)
     pass_q = db.query(pass_model)
@@ -244,18 +249,27 @@ def _pass_category(
     passes = pass_q.order_by(pass_model.created_at).all()
 
     counts: dict[str, int] = {p.id: 0 for p in passes}
+    revenues: dict[str, int] = {p.id: 0 for p in passes} if include_revenue else {}
 
     def _accumulate(model, fk_col):
-        q = db.query(fk_col, func.count().label("c")).filter(
+        cols = [fk_col, func.count().label("c")]
+        if include_revenue:
+            cols.append(
+                func.coalesce(func.sum(model.final_price), 0).label("rev"),
+            )
+        q = db.query(*cols).filter(
             model.created_at >= month_start,
             model.created_at < next_month_start,
             fk_col.is_not(None),
         )
         if effective_branch_id is not None:
             q = q.filter(model.branch_id == effective_branch_id)
-        for pass_id, c in q.group_by(fk_col).all():
-            if pass_id in counts:  # 지점 필터 후의 pass만 합산
+        for row in q.group_by(fk_col).all():
+            pass_id, c = row[0], row[1]
+            if pass_id in counts:
                 counts[pass_id] += c
+                if include_revenue:
+                    revenues[pass_id] += int(row[2] or 0)
 
     for col in member_fk_columns:
         _accumulate(Member, col)
@@ -263,7 +277,15 @@ def _pass_category(
         _accumulate(PTApplication, col)
 
     items = [
-        StatItem(code=str(p.id), label=p.name, count=counts[p.id])
+        StatItem(
+            code=str(p.id),
+            label=p.name,
+            count=counts[p.id],
+            # price·revenue 같이 묶여서 회원권/PT만 채움.
+            # price는 정가(cash_price), revenue는 실 결제 합산(final_price).
+            price=p.cash_price if include_revenue else None,
+            revenue=revenues[p.id] if include_revenue else None,
+        )
         for p in passes
     ]
     total = sum(item.count for item in items)
@@ -291,21 +313,26 @@ def get_pass_sales_stats(
             db, MembershipPass,
             [Member.membership_pass_id], [],
             effective_branch_id, month_start, next_month_start,
+            include_revenue=True,
         ),
         pt=_pass_category(
             db, PTPass,
             [], [PTApplication.pt_pass_id],
             effective_branch_id, month_start, next_month_start,
+            include_revenue=True,
         ),
+        # 락커/운동복은 회원권 묶음 결제에 흡수되어 정확한 매출 분리 어려움 → None
         locker=_pass_category(
             db, LockerPass,
             [Member.locker_pass_id], [PTApplication.locker_pass_id],
             effective_branch_id, month_start, next_month_start,
+            include_revenue=False,
         ),
         clothes=_pass_category(
             db, ClothesPass,
             [Member.clothes_pass_id], [PTApplication.clothes_pass_id],
             effective_branch_id, month_start, next_month_start,
+            include_revenue=False,
         ),
     )
 
@@ -314,45 +341,49 @@ def get_membership_expiry_stats(
     db: Session,
     branch_id: UUID | None,
     current_admin: Admin,
+    month: str | None = None,
 ) -> StatsResponse:
-    """회원권 잔여 기간 분포 - status=REGISTERED + end_date >= 오늘.
+    """회원권 잔여 기간 분포 - status=REGISTERED + end_date >= 기준일.
 
-    잔여 일수 (end_date - today) 기준 6구간 분류.
-    경계는 _EXPIRY_BUCKETS 참조 (30/60/90/180/365 + 12개월 초과).
+    기준일:
+    - month 미지정: 오늘 (KST)
+    - month=YYYY-MM: 해당 월 1일
 
-    오늘 기준은 KST (DB 세션 TZ와 일관성).
+    잔여 일수 (end_date - 기준일) 기준 13구간 분류 (_EXPIRY_BUCKETS 참조,
+    30일 단위 12 + 12개월 초과). 기준일 이미 지난 회원은 제외.
     """
     effective_branch_id = resolve_branch_filter(current_admin, branch_id)
-    today = datetime.now(_KST).date()
+    if month is None:
+        anchor_date = datetime.now(_KST).date()
+    else:
+        # _month_range 재사용 - 잘못된 형식은 400
+        month_start, _ = _month_range(month)
+        anchor_date = month_start.date()
 
     q = db.query(Member.end_date).filter(
         Member.status == "REGISTERED",
-        Member.end_date >= today,
+        Member.end_date >= anchor_date,
     )
     if effective_branch_id is not None:
         q = q.filter(Member.branch_id == effective_branch_id)
 
-    counts: dict[str, int] = {code: 0 for _, code, _ in _EXPIRY_BUCKETS}
-    counts[_EXPIRY_FALLBACK[0]] = 0
+    counts: dict[str, int] = {code: 0 for code in _EXPIRY_CODES_ORDERED}
 
     for (end_date,) in q.all():
-        days_left = (end_date - today).days
-        for upper, code, _ in _EXPIRY_BUCKETS:
-            if days_left <= upper:
-                counts[code] += 1
-                break
+        days_left = (end_date - anchor_date).days
+        if days_left <= 0:
+            # 기준일 == 만기일(오늘 만기). 안전하게 "1개월" 구간으로.
+            code = "M1"
         else:
-            counts[_EXPIRY_FALLBACK[0]] += 1
+            # CEIL(days/30) — 1~30일→1, 31~60일→2, ..., 331~360일→12, 그 이상→12P
+            months = -(-days_left // 30)
+            code = "M12P" if months > _EXPIRY_MAX_MONTHS else f"M{months}"
+        counts[code] += 1
 
     items = [
-        StatItem(code=code, label=label, count=counts[code])
-        for _, code, label in _EXPIRY_BUCKETS
+        StatItem(code=code, label=_EXPIRY_LABELS[code], count=counts[code])
+        for code in _EXPIRY_CODES_ORDERED
     ]
-    items.append(StatItem(
-        code=_EXPIRY_FALLBACK[0],
-        label=_EXPIRY_FALLBACK[1],
-        count=counts[_EXPIRY_FALLBACK[0]],
-    ))
     total = sum(item.count for item in items)
     return StatsResponse(items=items, total=total)
 

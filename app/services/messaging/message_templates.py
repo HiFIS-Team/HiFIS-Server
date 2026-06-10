@@ -11,6 +11,26 @@ _HEADER = "{name}님 {branch_name} 입니다!"
 # 안부 트리거 공통 헤더 (발송자 자기소개)
 _PERSONAL_HEADER = "{name}님 안녕하세요 :) {branch_name} {sender_name} {sender_position} 입니다."
 
+# 시스템 트리거 푸터 raw 템플릿 (어드민 미리보기 표시용).
+# 발송 시점엔 _build_footer가 naver_place_url 유무에 따라 동적 조립 - 미리보기는
+# 사장님이 변수 위치 확인할 수 있게 전체 라인 노출.
+# 이모지는 LMS에서 깨져서 안 보이므로 텍스트 라벨로만 구성.
+_FOOTER_TEMPLATE = (
+    "[{branch_name}]\n[상담문의]\n{branch_phone}\n"
+    "[네이버 플레이스]\n{naver_place_url}"
+)
+
+
+def get_header_footer_for(trigger: str) -> tuple[str, str | None]:
+    """어드민 본문 다이얼로그용 raw 헤더/푸터 템플릿 (placeholder 미치환).
+
+    - 안부 트리거: (개인 헤더, None) - 푸터 없음
+    - 시스템 트리거: (시스템 헤더, 푸터 템플릿)
+    """
+    if trigger in {t.value for t in PERSONAL_TRIGGERS}:
+        return _PERSONAL_HEADER, None
+    return _HEADER, _FOOTER_TEMPLATE
+
 # 트리거별 본문 (헤더/푸터 제외) - 문장·줄바꿈·중복 정리, 사실 정보는 원본 유지
 _BODIES: dict[str, str] = {
     TriggerType.RESERVATION_CONFIRM.value: """예약이 정상적으로 접수되었습니다.
@@ -23,11 +43,11 @@ _BODIES: dict[str, str] = {
 이후 등록 시 정상가 적용""",
 
     TriggerType.RESERVATION_CHECK_1.value: """지난번 상담받으셨던 골든타임 이벤트, 적용 기간이 4일 남았어요.
-혹시 등록 아직 고민 중이신가요?🙂""",
+혹시 등록 아직 고민 중이신가요?""",
 
     TriggerType.RESERVATION_CHECK_2.value: """지난번 상담받으셨던 골든타임 이벤트, 내일이 마감일이에요.
 마감 후에는 정상가로만 등록 가능합니다.
-혹시 등록 아직 고민 중이신가요?🙂""",
+혹시 등록 아직 고민 중이신가요?""",
 
     TriggerType.REGISTERED.value: """인생의 모든 순간이 선택의 순간이라고 생각합니다. 저희를 선택해 주셔서 진심으로 감사드립니다.
 회원님의 하루 운동이 가족과 함께할 수 있는 시간을 늘려줍니다. 항상 회원님 가정에 행복한 일들만 가득하시길 기원하겠습니다.""",
@@ -75,7 +95,7 @@ _BODIES: dict[str, str] = {
 
     TriggerType.EXPIRED_FOLLOWUP.value: """운동은 쉬는 기간이 길어질수록 다시 시작하기 더 어려워집니다.
 패턴을 잃기 전에, 무리 없이 리듬을 되찾으실 수 있도록 도와드리겠습니다.
-언제든 편하게 연락 주세요🙂
+언제든 편하게 연락 주세요.
 
 [회복 리턴 패키지]
 문자 수신 후 5일 이내 등록 시 10% 할인
@@ -85,16 +105,46 @@ _BODIES: dict[str, str] = {
 def _build_footer(
     branch_name: str, branch_phone: str, naver_place_url: str | None
 ) -> str:
-    """지점별 푸터 생성 - 네이버 링크는 있을 때만 표시 (카카오는 추후 추가 예정)"""
+    """지점별 푸터 생성 - 네이버 링크는 있을 때만 표시 (카카오는 추후 추가 예정).
+
+    LMS에서 이모지(🚩·📞) 깨짐 → 텍스트 라벨([상담문의] 등)만 사용.
+    """
     lines = [
-        f"🚩{branch_name}",
+        f"[{branch_name}]",
         "[상담문의]",
-        f"📞{branch_phone}",
+        branch_phone,
     ]
     if naver_place_url:
         lines.append("[네이버 플레이스]")
         lines.append(naver_place_url)
     return "\n".join(lines)
+
+def _substitute_body_vars(
+    body: str,
+    name: str,
+    branch_name: str,
+    branch_phone: str,
+    sender_name: str | None,
+    sender_position: str | None,
+) -> str:
+    """본문에 변수 placeholder({name}, {branch_name} 등) 있으면 치환.
+
+    사장님이 어드민에서 본문 편집할 때 변수 박을 수 있게 허용.
+    잘못된 placeholder (예: {wrong}) 있어도 본문 손상 없이 원본 그대로 반환.
+    """
+    vars_map = {
+        "name": name,
+        "branch_name": branch_name,
+        "branch_phone": branch_phone,
+        "sender_name": sender_name or "",
+        "sender_position": sender_position or "",
+    }
+    try:
+        return body.format(**vars_map)
+    except (KeyError, IndexError, ValueError):
+        # 잘못된 placeholder는 발송 차단 안 하고 원본 그대로
+        return body
+
 
 def render_message(
     trigger: str,
@@ -110,9 +160,14 @@ def render_message(
 
     - 안부 트리거 + sender 정보 있음 → "○○○님 안녕하세요 :) 지점 이름 직책 입니다." + 본문 (푸터 없음)
     - 그 외 (시스템 트리거이거나 sender 정보 없음) → 헤더 + 본문 + 푸터
-    - body_override 있으면 트리거 본문 대신 사용 (홀딩 AI 본문 케이스)
+    - body_override 있으면 그대로 사용 (DB body 또는 홀딩 AI 본문 케이스)
+    - body_override 없으면 _BODIES 코드 폴백
+    - 본문에 {name} 등 변수 placeholder 있으면 치환 (사장님 편집 본문 지원)
     """
     body = body_override or _BODIES.get(trigger, "안녕하세요, 반갑습니다 :)")
+    body = _substitute_body_vars(
+        body, name, branch_name, branch_phone, sender_name, sender_position,
+    )
 
     is_personal = (
         trigger in {t.value for t in PERSONAL_TRIGGERS}
