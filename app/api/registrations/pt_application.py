@@ -18,7 +18,10 @@ from app.schemas.registrations.pt_application import (
 from app.schemas.enums import MemberStatus
 from app.services.registrations import pt_application as pt_application_service
 from app.services.storage import MAX_SIGNATURE_BYTES, save_signature
+from app.utils.image import ImageValidationError, ensure_jpeg
 from pydantic import ValidationError
+
+MAX_FACE_BYTES = 10 * 1024 * 1024
 
 # Public - PT 신청서 제출 (인증 불필요)
 public_router = APIRouter(prefix="/pt-applications", tags=["pt-applications"])
@@ -26,10 +29,10 @@ public_router = APIRouter(prefix="/pt-applications", tags=["pt-applications"])
 
 async def _parse_pt_payload(
     request: Request, schema_cls,
-) -> tuple[object, str | None]:
-    """JSON / multipart 둘 다 받아서 (스키마 인스턴스, signature_url) 반환.
+) -> tuple[object, str | None, bytes | None]:
+    """JSON / multipart 둘 다 받아서 (스키마, signature_url, face_jpeg) 반환.
 
-    member 라우터의 _parse_member_payload와 동일 패턴.
+    member 라우터의 _parse_member_payload와 동일 패턴 (signature + face_image).
     Pydantic ValidationError는 422로 변환.
     """
     ct = request.headers.get("content-type", "")
@@ -64,11 +67,28 @@ async def _parse_pt_payload(
                     detail="서명 크기 초과 (최대 1MB)",
                 )
             signature_url = save_signature(sig_bytes)
-        return data, signature_url
+
+        face_jpeg: bytes | None = None
+        face = form.get("face_image")
+        if face is not None and hasattr(face, "read"):
+            face_bytes = await face.read()
+            if len(face_bytes) > MAX_FACE_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="얼굴 사진 크기 초과 (최대 10MB)",
+                )
+            try:
+                face_jpeg = ensure_jpeg(face_bytes)
+            except ImageValidationError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(e),
+                ) from e
+        return data, signature_url, face_jpeg
 
     body = await request.json()
     try:
-        return schema_cls.model_validate(body), None
+        return schema_cls.model_validate(body), None, None
     except ValidationError as e:
         raise HTTPException(
             status_code=422,
@@ -84,9 +104,13 @@ async def create_pt_application(
     db: Session = Depends(get_db),
 ):
     """PT 신청서 생성 (Public). JSON / multipart 둘 다 지원."""
-    data, signature_url = await _parse_pt_payload(request, PTApplicationCreate)
+    data, signature_url, face_jpeg = await _parse_pt_payload(
+        request, PTApplicationCreate,
+    )
     return pt_application_service.create_pt_application(
-        db, data, background_tasks, signature_url=signature_url,
+        db, data, background_tasks,
+        signature_url=signature_url,
+        face_jpeg=face_jpeg,
     )
 
 
@@ -101,7 +125,10 @@ async def re_register_pt_application(
 
     JSON / multipart 둘 다 지원. 식별: branch_id + name + phone 일치.
     """
-    data, signature_url = await _parse_pt_payload(request, PTApplicationReRegister)
+    # 재등록은 얼굴 재인증 X (이미 다짐 등록 회원)
+    data, signature_url, _face = await _parse_pt_payload(
+        request, PTApplicationReRegister,
+    )
     return pt_application_service.re_register_pt_application(
         db, data, background_tasks, signature_url=signature_url,
     )

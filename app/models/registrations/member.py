@@ -87,6 +87,15 @@ class Member(Base):
     # 예: '/uploads/signatures/<uuid>.png' — StaticFiles로 노출
     signature_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # 다짐 회원 UUID - CreateManagerMember 응답에서 받은 dagym member id.
+    # 추후 다짐 API 호출(상품 부여·얼굴 갱신·삭제 등) 시 키로 사용.
+    dajim_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 다짐 얼굴 등록 상태 - 다짐 지점만 의미 있음.
+    # NULL: 다짐 미사용 지점, True: 등록 성공, False: 실패(잔존 가능성)
+    dajim_face_registered: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

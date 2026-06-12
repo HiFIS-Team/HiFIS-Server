@@ -43,6 +43,12 @@ class Branch(Base):
     dajim_gym_id: Mapped[str | None] = mapped_column(
         String(50), nullable=True,
     )
+    # 다짐 얼굴 등록 강제 - True면 회원가입·PT 신청 시 face_image 필수.
+    # 다짐 RegisterFace 실패 시 HiFIS 가입도 차단 (rollback + cleanup).
+    # 현재 첨단점만 True (동광주는 지문 인증이라 얼굴 X).
+    dajim_face_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False,
+    )
     # 안부 메시지(D+N, 만기 안내 등) 발송자로 고정될 admin - 없으면 시스템 양식으로 폴백
     # use_alter=True: admins ↔ branches 순환 FK라 별도 ALTER TABLE로 추가 (drop 시 cycle 해결)
     messenger_admin_id: Mapped[UUID | None] = mapped_column(

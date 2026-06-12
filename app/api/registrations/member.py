@@ -18,7 +18,11 @@ from app.schemas.registrations.member import (
 from app.schemas.enums import MemberStatus
 from app.services.registrations import member as member_service
 from app.services.storage import MAX_SIGNATURE_BYTES, save_signature
+from app.utils.image import ImageValidationError, ensure_jpeg
 from pydantic import ValidationError
+
+# 얼굴 사진 - 정규화 전 원본 10MB 제한 (iPhone 고해상도 대비)
+MAX_FACE_BYTES = 10 * 1024 * 1024
 
 # Public - 회원가입 신청서 제출 (인증 불필요)
 public_router = APIRouter(prefix="/members", tags=["members"])
@@ -26,14 +30,14 @@ public_router = APIRouter(prefix="/members", tags=["members"])
 
 async def _parse_member_payload(
     request: Request, schema_cls,
-) -> tuple[object, str | None]:
-    """JSON / multipart 둘 다 받아서 (스키마 인스턴스, signature_url) 반환.
+) -> tuple[object, str | None, bytes | None]:
+    """JSON / multipart 둘 다 받아서 (스키마 인스턴스, signature_url, face_jpeg) 반환.
 
-    - application/json: 기존 흐름. 본문 그대로 파싱.
-    - multipart/form-data: form['payload'] (JSON 문자열) + form['signature'] (PNG).
-      서명은 PNG·1MB 제한 검증 후 디스크 저장 → URL 반환.
-
-    Pydantic ValidationError는 422로 변환 (FastAPI 자동 파싱과 동일 동작).
+    - application/json: 기존 흐름. signature·face 둘 다 None.
+    - multipart/form-data:
+        payload (필수): MemberCreate JSON 문자열
+        signature (선택): PNG, 1MB 이하 - 디스크 저장 → URL 반환
+        face_image (선택): JPEG/PNG, 10MB 이하 - Pillow로 정규화한 JPEG 바이트 반환
     """
     ct = request.headers.get("content-type", "")
     if ct.startswith("multipart/"):
@@ -67,11 +71,28 @@ async def _parse_member_payload(
                     detail="서명 크기 초과 (최대 1MB)",
                 )
             signature_url = save_signature(sig_bytes)
-        return data, signature_url
+
+        face_jpeg: bytes | None = None
+        face = form.get("face_image")
+        if face is not None and hasattr(face, "read"):
+            face_bytes = await face.read()
+            if len(face_bytes) > MAX_FACE_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="얼굴 사진 크기 초과 (최대 10MB)",
+                )
+            try:
+                face_jpeg = ensure_jpeg(face_bytes)
+            except ImageValidationError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(e),
+                ) from e
+        return data, signature_url, face_jpeg
 
     body = await request.json()
     try:
-        return schema_cls.model_validate(body), None
+        return schema_cls.model_validate(body), None, None
     except ValidationError as e:
         raise HTTPException(
             status_code=422,
@@ -90,9 +111,13 @@ async def create_member(
 
     어드민 알림은 BackgroundTasks로 응답 후 발송.
     """
-    data, signature_url = await _parse_member_payload(request, MemberCreate)
+    data, signature_url, face_jpeg = await _parse_member_payload(
+        request, MemberCreate,
+    )
     return member_service.create_member(
-        db, data, background_tasks, signature_url=signature_url,
+        db, data, background_tasks,
+        signature_url=signature_url,
+        face_jpeg=face_jpeg,
     )
 
 
@@ -108,7 +133,10 @@ async def re_register_member(
     JSON / multipart 둘 다 지원. 식별: branch_id + name + phone 일치.
     없으면 404, 둘 이상이면 400. 옛 행 UPDATE 후 RE_REGISTERED 알림톡 발송.
     """
-    data, signature_url = await _parse_member_payload(request, MemberReRegister)
+    # 재등록은 얼굴 인증 다시 안 받음 - 이미 다짐에 등록된 회원이라 face_jpeg 무시
+    data, signature_url, _face = await _parse_member_payload(
+        request, MemberReRegister,
+    )
     return member_service.re_register_member(
         db, data, background_tasks, signature_url=signature_url,
     )

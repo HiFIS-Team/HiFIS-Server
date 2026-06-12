@@ -2,7 +2,9 @@
 FROM python:3.14-slim
 
 # curl: healthcheck 용
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# gcc + libjpeg/zlib/png 헤더: Pillow 빌드용 (Python 3.14 wheel 없어서 소스 빌드)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl gcc libjpeg-dev zlib1g-dev libpng-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

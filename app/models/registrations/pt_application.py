@@ -96,6 +96,12 @@ class PTApplication(Base):
     # 전자서명 PNG 경로 (다짐 지점만 채워짐, 그 외 NULL)
     signature_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # 다짐 회원 UUID (PT도 다짐 입장에선 동일한 member). Member 컬럼과 동일 의미.
+    dajim_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dajim_face_registered: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

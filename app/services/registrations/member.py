@@ -37,12 +37,18 @@ def create_member(
     data: MemberCreate,
     background_tasks: BackgroundTasks | None = None,
     signature_url: str | None = None,
+    face_jpeg: bytes | None = None,
 ) -> Member:
     """회원가입 신청서 생성 - 지점/회원권 검증 → 저장 → 회원 LMS → 어드민 알림.
 
     signature_url: 다짐 지점에서 multipart로 받은 전자서명 PNG 저장 경로.
-    일반 지점은 None으로 그대로 NULL 저장.
+    face_jpeg: 첨단점 같이 dajim_face_enabled=True인 지점에서 받은 정규화 JPEG.
+        - 누락: 400 (회원가입 차단)
+        - 다짐 RegisterFace 실패: cleanup 후 400 raise → HiFIS row 안 만들어짐
     """
+    from fastapi import HTTPException, status as fastapi_status
+    from app.services import dajim as dajim_service
+
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
     membership_pass = ensure_membership_pass_match(
         db, data.membership_pass_id, data.branch_id,
@@ -56,6 +62,43 @@ def create_member(
         ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
     if data.clothes_pass_id is not None:
         ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+
+    # 다짐 얼굴 등록 강제 지점: HiFIS row INSERT 전에 다짐 동기 호출.
+    # 실패 시 가입 차단 (HiFIS INSERT도 안 함, 다짐 잔존 회원은 cleanup).
+    dajim_id: str | None = None
+    dajim_face_registered: bool | None = None
+    if branch.dajim_enabled and branch.dajim_face_enabled:
+        if not face_jpeg:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="이 지점은 회원가입 시 얼굴 사진이 필수입니다.",
+            )
+        if not branch.dajim_gym_id:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="지점의 다짐 GYM_ID가 설정되지 않았습니다.",
+            )
+        try:
+            dajim_id, dajim_face_registered = (
+                dajim_service.register_member_with_face_sync(
+                    name=data.name,
+                    phone=data.phone,
+                    address=data.address,
+                    gender=data.gender.value,
+                    birth_date=data.birth_date,
+                    gym_id=branch.dajim_gym_id,
+                    face_jpeg=face_jpeg,
+                )
+            )
+        except dajim_service.DajimSyncError as e:
+            logger.warning(
+                "다짐 얼굴 등록 실패 → HiFIS 가입 차단: branch=%s, name=%s, error=%s",
+                branch.name, data.name, e,
+            )
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
 
     member = Member(
         branch_id=data.branch_id,
@@ -79,6 +122,8 @@ def create_member(
         agreed_terms=data.agreed_terms,
         agreed_marketing=data.agreed_marketing,
         signature_url=signature_url,
+        dajim_id=dajim_id,
+        dajim_face_registered=dajim_face_registered,
     )
     db.add(member)
     db.commit()
@@ -121,14 +166,17 @@ def create_member(
             member.id, str(e),
         )
 
-    # 외부 SaaS 자동 회원 등록 - 지점별 토글, BackgroundTasks 비동기, 실패해도 HiFIS 정상
-    # 둘 다 켜져 있으면 둘 다 호출 (이론상 가능, 현실은 지점당 1개만 ON)
+    # 외부 SaaS 자동 회원 등록 - 지점별 토글, BackgroundTasks 비동기, 실패해도 HiFIS 정상.
+    # face_enabled 지점은 이미 위에서 sync 호출했으므로 여기선 스킵.
     if background_tasks is not None:
         if branch.broj_enabled:
             from app.services import broj as broj_service
             background_tasks.add_task(broj_service.register_member, member)
-        if branch.dajim_enabled and branch.dajim_gym_id:
-            from app.services import dajim as dajim_service
+        if (
+            branch.dajim_enabled
+            and branch.dajim_gym_id
+            and not branch.dajim_face_enabled  # 동광주처럼 얼굴 미강제 지점만 async
+        ):
             background_tasks.add_task(
                 dajim_service.register_member, member, branch.dajim_gym_id,
             )
