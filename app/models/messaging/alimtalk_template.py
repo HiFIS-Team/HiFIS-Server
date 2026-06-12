@@ -1,21 +1,21 @@
-"""알림톡 트리거별 발송 설정 (토글 + 본문) - 사장님이 어드민에서 편집.
+"""지점별 트리거 알림톡 발송 설정 (토글 + 본문) - 사장님·FC가 어드민에서 편집.
 
 발송 시 체크 우선순위:
 SystemConfig.messaging_enabled AND Branch.messaging_enabled AND
-AlimtalkTemplate.is_enabled (해당 trigger) → 셋 다 true여야 발송.
+AlimtalkTemplate.is_enabled (해당 branch+trigger) → 셋 다 true여야 발송.
 
 본문 결정 우선순위:
 1. body_override (HOLD/HOLD_CANCEL AI 본문)
-2. AlimtalkTemplate.body (DB - 사장님 편집)
+2. AlimtalkTemplate.body (DB - 지점별 편집)
 3. (폴백) services/messaging/message_templates.py의 _BODIES 코드 디폴트
 
-마이그 시 _BODIES 내용을 그대로 DB body로 seed → 운영 중엔 DB가 단일 진실.
-본문에 변수 placeholder({name}, {branch_name}, {branch_phone}) 허용 - 발송 시 치환.
+지점 추가 시 14종 트리거 row 자동 seed (services.branch.create_branch).
+unique (branch_id, trigger_type) - 한 지점에 한 트리거당 1 row.
 """
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,16 +23,28 @@ from app.db.base import Base
 
 
 class AlimtalkTemplate(Base):
-    """트리거 단위 알림톡 발송 설정"""
+    """지점별 트리거 알림톡 발송 설정"""
     __tablename__ = "alimtalk_templates"
+    __table_args__ = (
+        UniqueConstraint(
+            "branch_id", "trigger_type",
+            name="uq_alimtalk_templates_branch_trigger",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
     )
+    branch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("branches.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     trigger_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, unique=True, index=True,
+        String(50), nullable=False, index=True,
     )
     is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true", default=True,

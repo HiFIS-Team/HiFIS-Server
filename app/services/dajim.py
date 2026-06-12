@@ -61,6 +61,33 @@ _CREATE_MEMBER_QUERY = """mutation CreateManagerMember($input: MemberCreateInput
   }
 }"""
 
+_REGISTER_FACE_QUERY = """mutation RegisterFace($memberId: String!, $faceImageUrl: String!) {
+  managerMembers {
+    registerFace(memberId: $memberId, faceImageUrl: $faceImageUrl)
+    __typename
+  }
+}"""
+
+_DELETE_MEMBER_QUERY = """mutation DeleteManagerMembers($ids: [String!]!) {
+  managerMembers {
+    delete(ids: $ids) {
+      deletedCount
+      __typename
+    }
+    __typename
+  }
+}"""
+
+_PRESIGNED_URL = "https://www.dagym-manager.com/get-presigned-url"
+
+
+class DajimSyncError(Exception):
+    """동기 다짐 호출 실패 - 라우터에서 400으로 변환되어 가입 차단.
+
+    얼굴 인증 실패·다짐 응답 불량 등 회원가입을 막아야 할 시나리오에서 raise.
+    BackgroundTask 흐름(브로제이·동광주 회원)에선 발생 X (그쪽은 best-effort).
+    """
+
 
 def _sha256_hex(text: str) -> str:
     """평문 → SHA-256 16진수 문자열 (다짐 로그인 비번 형식)"""
@@ -254,3 +281,227 @@ def register_member(member: Member, gym_id: str) -> None:
                     member.id, e,
                 )
                 return
+
+
+# === Sync 흐름 (얼굴 등록 시 사용. 실패 시 DajimSyncError raise → 가입 차단) ===
+
+def _build_member_input(name: str, phone: str, address: str,
+                         gender: str | None, birth_date) -> dict:
+    """HiFIS 회원 데이터 → 다짐 MemberCreateInput 변환"""
+    input_dict: dict[str, Any] = {
+        "name": name,
+        "phone": _format_phone_dashed(phone),
+        "address": address or "",
+    }
+    if gender:
+        input_dict["gender"] = gender
+    if birth_date:
+        input_dict["birthday"] = birth_date.isoformat()
+    return input_dict
+
+
+def _create_dajim_member_sync(
+    client: httpx.Client, token: str, gym_id: str, input_dict: dict,
+) -> str:
+    """CreateManagerMember mutation → 생성된 dajim_id 반환. 실패 시 DajimSyncError"""
+    payload = {
+        "operationName": "CreateManagerMember",
+        "query": _CREATE_MEMBER_QUERY,
+        "variables": {"input": input_dict},
+    }
+    resp = client.post(
+        _GRAPHQL_URL,
+        json=payload,
+        headers={
+            "authorization": token,
+            "app-type": "managerPC",
+            "x-gym-id": gym_id,
+            "content-type": "application/json",
+        },
+    )
+    if resp.status_code >= 400:
+        raise DajimSyncError(
+            f"다짐 회원 등록 HTTP {resp.status_code}: {resp.text[:200]}",
+        )
+    body = resp.json()
+    if "errors" in body:
+        raise DajimSyncError(f"다짐 회원 등록 거부: {body['errors']}")
+    created = (
+        ((body.get("data") or {}).get("managerMembers") or {}).get("create")
+    ) or {}
+    dajim_id = created.get("id")
+    if not dajim_id:
+        raise DajimSyncError(f"다짐 회원 응답에 id 없음: {body}")
+    return dajim_id
+
+
+def _upload_face_to_s3(
+    client: httpx.Client, token: str, gym_id: str,
+    name: str, face_jpeg: bytes,
+) -> str:
+    """presigned URL 발급 → S3 PUT → 쿼리스트링 제거한 URL 반환.
+
+    presigned URL은 PUT 가능한 일회용 (~7일). 업로드만 끝나면 깨끗한 URL을 다짐에 등록.
+    """
+    # 1. presigned URL 발급
+    resp = client.post(
+        _PRESIGNED_URL,
+        json={"fileName": f"{name}-face.jpeg", "subject": "member-face"},
+        headers={
+            "authorization": token,
+            "app-type": "managerPC",
+            "x-gym-id": gym_id,
+            "content-type": "application/json",
+        },
+    )
+    if resp.status_code >= 400:
+        raise DajimSyncError(
+            f"다짐 presigned URL HTTP {resp.status_code}: {resp.text[:200]}",
+        )
+    file_link = (resp.json() or {}).get("fileLink")
+    if not file_link:
+        raise DajimSyncError("다짐 presigned URL 응답 비정상")
+
+    # 2. S3 PUT (presigned 자체에 서명 포함, 다짐 헤더 불필요)
+    put_resp = client.put(
+        file_link,
+        content=face_jpeg,
+        headers={"Content-Type": "image/jpeg"},
+    )
+    if put_resp.status_code >= 400:
+        raise DajimSyncError(
+            f"S3 업로드 HTTP {put_resp.status_code}: {put_resp.text[:200]}",
+        )
+
+    # 3. 쿼리스트링 제거 (다짐 등록용 깨끗한 URL)
+    return file_link.split("?", 1)[0]
+
+
+def _register_face_sync(
+    client: httpx.Client, token: str, gym_id: str,
+    dajim_id: str, face_url: str,
+) -> None:
+    """RegisterFace mutation - 얼굴 인식 불통과 시 GraphQL errors → DajimSyncError"""
+    payload = {
+        "operationName": "RegisterFace",
+        "query": _REGISTER_FACE_QUERY,
+        "variables": {"memberId": dajim_id, "faceImageUrl": face_url},
+    }
+    resp = client.post(
+        _GRAPHQL_URL,
+        json=payload,
+        headers={
+            "authorization": token,
+            "app-type": "managerPC",
+            "x-gym-id": gym_id,
+            "content-type": "application/json",
+        },
+    )
+    if resp.status_code >= 400:
+        raise DajimSyncError(
+            f"RegisterFace HTTP {resp.status_code}: {resp.text[:200]}",
+        )
+    body = resp.json()
+    if "errors" in body:
+        # 다짐이 얼굴 인식 실패 시 GraphQL errors로 응답.
+        # 사용자에게 보여줄 메시지로 단순화.
+        raise DajimSyncError(
+            "얼굴 인증에 실패했습니다. 정면에서 얼굴이 잘 보이게 다시 찍어주세요.",
+        )
+
+
+def _delete_dajim_member_best_effort(
+    client: httpx.Client, token: str, gym_id: str, dajim_id: str,
+) -> None:
+    """DeleteManagerMembers - 얼굴 실패 시 cleanup. 실패해도 raise X (로그만)"""
+    payload = {
+        "operationName": "DeleteManagerMembers",
+        "query": _DELETE_MEMBER_QUERY,
+        "variables": {"ids": [dajim_id]},
+    }
+    try:
+        resp = client.post(
+            _GRAPHQL_URL,
+            json=payload,
+            headers={
+                "authorization": token,
+                "app-type": "managerPC",
+                "x-gym-id": gym_id,
+                "content-type": "application/json",
+            },
+        )
+        if resp.status_code >= 400 or "errors" in (resp.json() or {}):
+            logger.error(
+                "다짐 cleanup 실패: dajim_id=%s, status=%s, body=%s",
+                dajim_id, resp.status_code, resp.text[:300],
+            )
+        else:
+            logger.info("다짐 cleanup 완료: dajim_id=%s", dajim_id)
+    except Exception as e:
+        logger.error("다짐 cleanup 예외: dajim_id=%s, error=%s", dajim_id, e)
+
+
+def register_member_with_face_sync(
+    name: str,
+    phone: str,
+    address: str,
+    gender: str | None,
+    birth_date,
+    gym_id: str,
+    face_jpeg: bytes,
+) -> tuple[str, bool]:
+    """다짐 동기 등록 + 얼굴 등록 - 회원가입·PT 신청 라우터에서 호출.
+
+    반환: (dajim_id, face_registered)
+    실패 시 DajimSyncError. cleanup은 함수 안에서 best-effort 처리.
+
+    회원 객체 대신 개별 인자 받음 - DB row 만들기 전(flush 단계)에 호출하므로.
+    """
+    if not settings.DAJIM_LOGIN_EMAIL or not settings.DAJIM_LOGIN_PW:
+        raise DajimSyncError("다짐 로그인 환경변수가 비어있습니다.")
+    if not gym_id:
+        raise DajimSyncError("지점의 dajim_gym_id가 비어있습니다.")
+    if not face_jpeg:
+        raise DajimSyncError("얼굴 이미지가 비어있습니다.")
+
+    input_dict = _build_member_input(name, phone, address, gender, birth_date)
+    with httpx.Client(timeout=20.0) as client:
+        token = _get_token(client)
+        if token is None:
+            raise DajimSyncError("다짐 로그인 실패")
+
+        # 토큰 만료 가능 - create 단계에서 401/403이면 재로그인 후 재시도 1회
+        dajim_id: str | None = None
+        for attempt in (1, 2):
+            try:
+                dajim_id = _create_dajim_member_sync(
+                    client, token, gym_id, input_dict,
+                )
+                break
+            except DajimSyncError as e:
+                msg = str(e).lower()
+                if attempt == 1 and ("401" in msg or "403" in msg
+                                      or "unauthorized" in msg
+                                      or "token" in msg):
+                    token = _get_token(client, force_refresh=True)
+                    if token is None:
+                        raise DajimSyncError("다짐 재로그인 실패")
+                    continue
+                raise
+        assert dajim_id is not None
+
+        # 얼굴 업로드 + 등록. 어느 단계라도 실패하면 cleanup 후 raise
+        try:
+            face_url = _upload_face_to_s3(
+                client, token, gym_id, input_dict["name"], face_jpeg,
+            )
+            _register_face_sync(client, token, gym_id, dajim_id, face_url)
+        except DajimSyncError:
+            _delete_dajim_member_best_effort(client, token, gym_id, dajim_id)
+            raise
+
+        logger.info(
+            "다짐 동기 등록 완료: dajim_id=%s, name=%s, phone=%s",
+            dajim_id, name, mask_phone(phone),
+        )
+        return dajim_id, True

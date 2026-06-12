@@ -36,12 +36,17 @@ def create_pt_application(
     data: PTApplicationCreate,
     background_tasks: BackgroundTasks | None = None,
     signature_url: str | None = None,
+    face_jpeg: bytes | None = None,
 ) -> PTApplication:
     """PT 신청서 생성 - 지점/수강권/락커/운동복 검증 → 저장 → 회원 LMS → 어드민 알림.
 
-    signature_url: 다짐 지점에서 multipart로 받은 전자서명 PNG 저장 경로.
-    일반 지점은 None으로 그대로 NULL 저장.
+    signature_url: 다짐 지점 multipart 전자서명.
+    face_jpeg: 첨단점처럼 dajim_face_enabled=True인 지점에서 받은 정규화 JPEG.
+        다짐 RegisterFace 실패 시 cleanup + 400 (PT 신청도 차단).
     """
+    from fastapi import HTTPException, status as fastapi_status
+    from app.services import dajim as dajim_service
+
     branch = get_branch(db, data.branch_id)  # 존재 검증 + 이름 확보
     pt_pass = ensure_pt_pass_match(db, data.pt_pass_id, data.branch_id)
     # 락커·운동복 무료제공 수강권은 별도 락커·운동복 선택 차단
@@ -52,6 +57,76 @@ def create_pt_application(
         ensure_locker_pass_match(db, data.locker_pass_id, data.branch_id)
     if data.clothes_pass_id is not None:
         ensure_clothes_pass_match(db, data.clothes_pass_id, data.branch_id)
+
+    # 다짐 얼굴 등록 강제 지점: HiFIS row INSERT 전에 다짐 동기 호출.
+    dajim_id: str | None = None
+    dajim_face_registered: bool | None = None
+    if branch.dajim_enabled and branch.dajim_face_enabled:
+        if not face_jpeg:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="이 지점은 PT 신청 시 얼굴 사진이 필수입니다.",
+            )
+        if not branch.dajim_gym_id:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="지점의 다짐 GYM_ID가 설정되지 않았습니다.",
+            )
+        try:
+            dajim_id, dajim_face_registered = (
+                dajim_service.register_member_with_face_sync(
+                    name=data.name,
+                    phone=data.phone,
+                    address=data.address,
+                    gender=data.gender.value,
+                    birth_date=data.birth_date,
+                    gym_id=branch.dajim_gym_id,
+                    face_jpeg=face_jpeg,
+                )
+            )
+        except dajim_service.DajimSyncError as e:
+            logger.warning(
+                "다짐 얼굴 등록 실패 → PT 신청 차단: branch=%s, name=%s, error=%s",
+                branch.name, data.name, e,
+            )
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
+
+    # 브로제이 얼굴 등록 강제 지점 (화순점): PT 신청도 동일
+    from app.services import broj as broj_service
+    broj_id: str | None = None
+    broj_face_registered: bool | None = None
+    if branch.broj_enabled and branch.broj_face_enabled:
+        if not face_jpeg:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="이 지점은 PT 신청 시 얼굴 사진이 필수입니다.",
+            )
+        try:
+            broj_id, broj_face_registered = (
+                broj_service.register_member_with_face_sync(
+                    name=data.name,
+                    phone=data.phone,
+                    address=data.address,
+                    gender=data.gender.value,
+                    birth_date=data.birth_date,
+                    motivation=data.motivation.value if data.motivation else None,
+                    referral=data.referral.value,
+                    agreed_marketing=data.agreed_marketing,
+                    face_jpeg=face_jpeg,
+                )
+            )
+        except broj_service.BrojSyncError as e:
+            logger.warning(
+                "브로제이 얼굴 등록 실패 → PT 차단: branch=%s, name=%s, error=%s",
+                branch.name, data.name, e,
+            )
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
 
     application = PTApplication(
         branch_id=data.branch_id,
@@ -76,6 +151,10 @@ def create_pt_application(
         agreed_notice=data.agreed_notice,
         agreed_marketing=data.agreed_marketing,
         signature_url=signature_url,
+        dajim_id=dajim_id,
+        dajim_face_registered=dajim_face_registered,
+        broj_id=broj_id,
+        broj_face_registered=broj_face_registered,
     )
     db.add(application)
     db.commit()

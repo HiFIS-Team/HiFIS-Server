@@ -65,21 +65,25 @@ def send_message(db: Session, data: MessageSendRequest) -> Message | None:
         )
         return None
 
-    # 0-c. 트리거별 토글 확인 (전역·지점 OK여도 해당 트리거 OFF면 차단)
-    if not alimtalk_template_service.is_trigger_enabled(db, data.trigger_type):
+    # 0-c. 지점별 트리거 토글 확인 (전역·지점 OK여도 해당 (지점,트리거) OFF면 차단)
+    if not alimtalk_template_service.is_trigger_enabled(
+        db, data.branch_id, data.trigger_type,
+    ):
         logger.info(
-            "[DISABLED:TRIGGER] 알림톡 차단 - 트리거 OFF: trigger=%s, recipient=%s",
-            data.trigger_type.value, mask_phone(data.recipient),
+            "[DISABLED:TRIGGER] 알림톡 차단 - 지점(%s) 트리거(%s) OFF: recipient=%s",
+            branch.name, data.trigger_type.value, mask_phone(data.recipient),
         )
         return None
 
     # 2. 트리거 양식 렌더링 (안부 트리거는 발송자 이름·직책 박힘, 시스템은 헤더+푸터)
     sender_name, sender_position = _get_messenger_info(db, branch)
 
-    # 본문 결정 - HOLD AI(body_override) > DB body > _BODIES 코드 폴백
+    # 본문 결정 - HOLD AI(body_override) > 지점 DB body > _BODIES 코드 폴백
     effective_body_override = data.body_override
     if effective_body_override is None:
-        db_body = alimtalk_template_service.get_body_for(db, data.trigger_type)
+        db_body = alimtalk_template_service.get_body_for(
+            db, data.branch_id, data.trigger_type,
+        )
         if db_body:
             effective_body_override = db_body
 

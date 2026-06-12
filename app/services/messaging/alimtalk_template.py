@@ -1,10 +1,11 @@
-"""트리거별 알림톡 발송 설정 (토글 + 본문) - 어드민 관리 + 발송 시 체크 헬퍼"""
+"""지점별 트리거 알림톡 발송 설정 (토글 + 본문) - 어드민 관리 + 발송 시 체크 헬퍼"""
 import logging
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import assert_branch_access
 from app.models.admin.admin import Admin
 from app.models.branch import Branch
 from app.models.messaging.alimtalk_template import AlimtalkTemplate
@@ -58,10 +59,11 @@ def _to_response_dict(template: AlimtalkTemplate) -> dict:
     }
 
 
-def list_templates(db: Session) -> list[dict]:
-    """모든 트리거 설정 목록 - default_body·variables 포함"""
+def list_templates(db: Session, branch_id: UUID) -> list[dict]:
+    """지점의 14종 트리거 설정 목록 - 지점 생성 시 자동 seed돼서 14개 보장"""
     templates = (
         db.query(AlimtalkTemplate)
+        .filter(AlimtalkTemplate.branch_id == branch_id)
         .order_by(AlimtalkTemplate.trigger_type)
         .all()
     )
@@ -69,9 +71,12 @@ def list_templates(db: Session) -> list[dict]:
 
 
 def update_template(
-    db: Session, template_id: UUID, data: AlimtalkTemplateUpdate,
+    db: Session,
+    template_id: UUID,
+    data: AlimtalkTemplateUpdate,
+    current_admin: Admin,
 ) -> dict:
-    """is_enabled·body PATCH - body는 빈 문자열도 그대로 저장 (디폴트 복원은 별도 처리)"""
+    """is_enabled·body PATCH - FC는 본인 지점 row만 수정 가능"""
     template = (
         db.query(AlimtalkTemplate)
         .filter(AlimtalkTemplate.id == template_id)
@@ -82,6 +87,7 @@ def update_template(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="존재하지 않는 알림톡 템플릿입니다.",
         )
+    assert_branch_access(current_admin, template.branch_id)
 
     if data.is_enabled is not None:
         template.is_enabled = data.is_enabled
@@ -92,18 +98,24 @@ def update_template(
     db.commit()
     db.refresh(template)
     logger.info(
-        "알림톡 템플릿 갱신: trigger=%s, is_enabled=%s, body_set=%s",
-        template.trigger_type, template.is_enabled, template.body is not None,
+        "알림톡 템플릿 갱신: branch_id=%s, trigger=%s, is_enabled=%s, body_set=%s",
+        template.branch_id, template.trigger_type,
+        template.is_enabled, template.body is not None,
     )
     return _to_response_dict(template)
 
 
-def is_trigger_enabled(db: Session, trigger: TriggerType | str) -> bool:
-    """발송 시점 토글 체크 - row 없으면 True 폴백 (안전)"""
+def is_trigger_enabled(
+    db: Session, branch_id: UUID, trigger: TriggerType | str,
+) -> bool:
+    """발송 시점 토글 체크 - 지점+트리거 row 없으면 True 폴백 (안전)"""
     code = trigger.value if isinstance(trigger, TriggerType) else trigger
     template = (
         db.query(AlimtalkTemplate)
-        .filter(AlimtalkTemplate.trigger_type == code)
+        .filter(
+            AlimtalkTemplate.branch_id == branch_id,
+            AlimtalkTemplate.trigger_type == code,
+        )
         .first()
     )
     if template is None:
@@ -111,12 +123,17 @@ def is_trigger_enabled(db: Session, trigger: TriggerType | str) -> bool:
     return template.is_enabled
 
 
-def get_body_for(db: Session, trigger: TriggerType | str) -> str | None:
-    """발송 시점 DB body 조회 - 없으면 None 반환 (render_message가 _BODIES 폴백)"""
+def get_body_for(
+    db: Session, branch_id: UUID, trigger: TriggerType | str,
+) -> str | None:
+    """발송 시점 DB body 조회 - 없으면 None (render_message가 _BODIES 폴백)"""
     code = trigger.value if isinstance(trigger, TriggerType) else trigger
     template = (
         db.query(AlimtalkTemplate)
-        .filter(AlimtalkTemplate.trigger_type == code)
+        .filter(
+            AlimtalkTemplate.branch_id == branch_id,
+            AlimtalkTemplate.trigger_type == code,
+        )
         .first()
     )
     if template is None:
@@ -129,12 +146,16 @@ _PREVIEW_DUMMY_NAME = "홍길동"
 
 
 def preview_template(
-    db: Session, template_id: UUID, data: AlimtalkTemplatePreviewRequest,
+    db: Session,
+    template_id: UUID,
+    data: AlimtalkTemplatePreviewRequest,
+    current_admin: Admin,
 ) -> str:
     """편집 중인(또는 저장된) 본문 + 헤더 + 푸터 조립해서 미리보기 반환.
 
-    branch_id 미입력 시 첫 지점 사용 (대표 미리보기).
+    템플릿은 지점에 묶여 있으므로 그 지점 정보로 미리보기 (payload.branch_id 무시).
     안부 트리거면 발송자(branch.messenger_admin_id) 정보 자동 채움.
+    FC는 본인 지점 템플릿만 미리보기 가능.
     """
     template = (
         db.query(AlimtalkTemplate)
@@ -146,17 +167,10 @@ def preview_template(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="존재하지 않는 알림톡 템플릿입니다.",
         )
+    assert_branch_access(current_admin, template.branch_id)
 
-    # 대상 지점 - 명시 안 하면 첫 지점 (created_at 순). 지점 없으면 폴백 더미.
-    if data.branch_id is not None:
-        branch = db.query(Branch).filter(Branch.id == data.branch_id).first()
-        if branch is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="존재하지 않는 지점입니다.",
-            )
-    else:
-        branch = db.query(Branch).order_by(Branch.created_at).first()
+    # 미리보기 지점 - 항상 템플릿이 묶인 지점 (지점별 분리됐으므로)
+    branch = db.query(Branch).filter(Branch.id == template.branch_id).first()
 
     if branch is not None:
         branch_name = branch.name
