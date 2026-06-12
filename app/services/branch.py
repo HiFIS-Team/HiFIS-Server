@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.models.admin.admin import Admin
 from app.models.branch import Branch
+from app.models.messaging.alimtalk_template import AlimtalkTemplate
 from app.schemas.branch import BranchCreate, BranchUpdate
+from app.schemas.enums import TriggerType
+from app.services.messaging.message_templates import _BODIES
 
 
 def _ensure_messenger_admin_match(
@@ -25,7 +28,10 @@ def _ensure_messenger_admin_match(
         )
 
 def create_branch(db: Session, data: BranchCreate) -> Branch:
-    """지점 등록 - messenger_admin_id는 같은 지점이어야 하나 신규 지점이면 보통 NULL"""
+    """지점 등록 - messenger_admin_id는 같은 지점이어야 하나 신규 지점이면 보통 NULL.
+
+    + 14종 트리거 알림톡 템플릿 자동 seed (is_enabled=True, body=코드 _BODIES).
+    """
     branch = Branch(
         name=data.name,
         phone=data.phone,
@@ -33,11 +39,20 @@ def create_branch(db: Session, data: BranchCreate) -> Branch:
         naver_place_url=data.naver_place_url,
     )
     db.add(branch)
-    db.flush()  # branch.id 확보 (messenger 검증용)
+    db.flush()  # branch.id 확보 (messenger 검증용 + 템플릿 seed)
 
     if data.messenger_admin_id is not None:
         _ensure_messenger_admin_match(db, data.messenger_admin_id, branch.id)
         branch.messenger_admin_id = data.messenger_admin_id
+
+    # 14종 트리거 템플릿 seed - 코드 _BODIES 본문 그대로 (없으면 NULL → 폴백)
+    for trigger in TriggerType:
+        db.add(AlimtalkTemplate(
+            branch_id=branch.id,
+            trigger_type=trigger.value,
+            is_enabled=True,
+            body=_BODIES.get(trigger.value),
+        ))
 
     db.commit()
     db.refresh(branch)
