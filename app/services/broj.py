@@ -219,8 +219,11 @@ def _build_broj_payload(
 
 def _create_member_sync(
     client: httpx.Client, token: str, payload: dict,
-) -> tuple[str, str]:
-    """브로제이 회원 생성 + jgjm_key·jgroup_key 반환. 실패 시 BrojSyncError"""
+) -> str:
+    """브로제이 회원 생성 + jgjm_key 반환. 실패 시 BrojSyncError.
+
+    응답 형태: {"message": "success", "result": <jgjm_key int>, ...}
+    """
     resp = client.post(
         _REGISTER_URL,
         json=payload,
@@ -234,14 +237,11 @@ def _create_member_sync(
             f"브로제이 회원 생성 HTTP {resp.status_code}: {resp.text[:200]}",
         )
     body = resp.json()
-    result = body.get("result") or body
-    jgjm_key = result.get("jgjm_key")
-    jgroup_key = result.get("jgroup_key")
-    if not jgjm_key or not jgroup_key:
-        raise BrojSyncError(
-            f"브로제이 회원 응답에 jgjm_key·jgroup_key 없음: {body}",
-        )
-    return str(jgjm_key), str(jgroup_key)
+    # 응답 형태: {"message": "success", "result": <jgjm_key int>, "events": [], "_links": {...}}
+    jgjm_key = body.get("result")
+    if not isinstance(jgjm_key, (int, str)) or not jgjm_key:
+        raise BrojSyncError(f"브로제이 회원 응답 형식 이상: {body}")
+    return str(jgjm_key)
 
 
 def _upload_face_to_s3(
@@ -339,6 +339,8 @@ def register_member_with_face_sync(
     """
     if not (settings.BROJ_LOGIN_ID and settings.BROJ_JGROUP_TOKEN):
         raise BrojSyncError("브로제이 환경변수가 비어있습니다.")
+    if not settings.BROJ_JGROUP_KEY:
+        raise BrojSyncError("BROJ_JGROUP_KEY가 설정되지 않았습니다.")
     if not face_jpeg:
         raise BrojSyncError("얼굴 이미지가 비어있습니다.")
 
@@ -353,12 +355,9 @@ def register_member_with_face_sync(
 
         # 1. 회원 생성 (토큰 만료 시 1회 재시도)
         jgjm_key: str | None = None
-        jgroup_key: str | None = None
         for attempt in (1, 2):
             try:
-                jgjm_key, jgroup_key = _create_member_sync(
-                    client, token, payload,
-                )
+                jgjm_key = _create_member_sync(client, token, payload)
                 break
             except BrojSyncError as e:
                 if attempt == 1 and "401" in str(e):
@@ -367,7 +366,8 @@ def register_member_with_face_sync(
                         raise BrojSyncError("브로제이 재로그인 실패")
                     continue
                 raise
-        assert jgjm_key and jgroup_key
+        assert jgjm_key
+        jgroup_key = settings.BROJ_JGROUP_KEY
 
         # 2. S3 PUT → 3. PATCH profile-image → 4. POST faceid/add
         filename = _upload_face_to_s3(jgroup_key, jgjm_key, face_jpeg)

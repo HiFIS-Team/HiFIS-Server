@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     BROJ_LOGIN_ID: str = ""
     BROJ_LOGIN_PW: str = ""
     BROJ_JGROUP_TOKEN: str = ""
+    # 브로제이 jgroup 식별자 - S3 path(jgroup/{jgroup_key}/...) 구성에 필요.
+    # 회원 생성 응답엔 안 들어오고, 어드민 브라우저 네트워크탭 URL에서 추출.
+    BROJ_JGROUP_KEY: str = ""
     # 브로제이 IAM 키 - 어드민 브라우저가 직접 S3 PUT할 때 쓰는 키 (장기 IAM).
     # 브로제이 어드민 console에서 추출 (`AWS.config.credentials`). 만료 X.
     BROJ_AWS_ACCESS_KEY_ID: str = ""
