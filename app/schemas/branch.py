@@ -52,6 +52,10 @@ class BranchUpdate(BaseModel):
         default=None, max_length=50,
         description="다짐 GYM_ID (지점별 다름). dajim_enabled=True인 지점만 필수",
     )
+    dajim_face_enabled: bool | None = Field(
+        default=None,
+        description="다짐 얼굴 등록 강제 토글 (true면 회원가입·PT 신청 시 face_image 필수)",
+    )
 
 class BranchResponse(BaseModel):
     """지점 응답 - messenger nested로 발송자 이름·직책 같이 내려감"""
@@ -68,4 +72,5 @@ class BranchResponse(BaseModel):
     broj_enabled: bool
     dajim_enabled: bool
     dajim_gym_id: str | None
+    dajim_face_enabled: bool
     created_at: datetime
