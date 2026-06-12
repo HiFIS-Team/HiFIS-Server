@@ -95,6 +95,11 @@ class Member(Base):
     dajim_face_registered: Mapped[bool | None] = mapped_column(
         Boolean, nullable=True,
     )
+    # 브로제이 회원 키 (jgjm_key, 숫자 ID) - 화순점만
+    broj_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    broj_face_registered: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

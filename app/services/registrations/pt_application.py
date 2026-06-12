@@ -94,6 +94,40 @@ def create_pt_application(
                 detail=str(e),
             )
 
+    # 브로제이 얼굴 등록 강제 지점 (화순점): PT 신청도 동일
+    from app.services import broj as broj_service
+    broj_id: str | None = None
+    broj_face_registered: bool | None = None
+    if branch.broj_enabled and branch.broj_face_enabled:
+        if not face_jpeg:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="이 지점은 PT 신청 시 얼굴 사진이 필수입니다.",
+            )
+        try:
+            broj_id, broj_face_registered = (
+                broj_service.register_member_with_face_sync(
+                    name=data.name,
+                    phone=data.phone,
+                    address=data.address,
+                    gender=data.gender.value,
+                    birth_date=data.birth_date,
+                    motivation=data.motivation.value if data.motivation else None,
+                    referral=data.referral.value,
+                    agreed_marketing=data.agreed_marketing,
+                    face_jpeg=face_jpeg,
+                )
+            )
+        except broj_service.BrojSyncError as e:
+            logger.warning(
+                "브로제이 얼굴 등록 실패 → PT 차단: branch=%s, name=%s, error=%s",
+                branch.name, data.name, e,
+            )
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
+
     application = PTApplication(
         branch_id=data.branch_id,
         pt_pass_id=data.pt_pass_id,
@@ -119,6 +153,8 @@ def create_pt_application(
         signature_url=signature_url,
         dajim_id=dajim_id,
         dajim_face_registered=dajim_face_registered,
+        broj_id=broj_id,
+        broj_face_registered=broj_face_registered,
     )
     db.add(application)
     db.commit()

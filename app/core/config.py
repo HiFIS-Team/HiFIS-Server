@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     BROJ_LOGIN_ID: str = ""
     BROJ_LOGIN_PW: str = ""
     BROJ_JGROUP_TOKEN: str = ""
+    # 브로제이 IAM 키 - 어드민 브라우저가 직접 S3 PUT할 때 쓰는 키 (장기 IAM).
+    # 브로제이 어드민 console에서 추출 (`AWS.config.credentials`). 만료 X.
+    BROJ_AWS_ACCESS_KEY_ID: str = ""
+    BROJ_AWS_SECRET_ACCESS_KEY: str = ""
 
     # 다짐(Dagym) 자동 회원 등록 - 첨단점·동광주점 활성.
     # GraphQL 기반. 비밀번호는 평문 → 코드가 SHA-256 hex로 변환해 전송.

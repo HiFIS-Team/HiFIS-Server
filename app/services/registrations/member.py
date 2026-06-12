@@ -100,6 +100,40 @@ def create_member(
                 detail=str(e),
             )
 
+    # 브로제이 얼굴 등록 강제 지점 (화순점): 다짐과 동일 흐름
+    from app.services import broj as broj_service
+    broj_id: str | None = None
+    broj_face_registered: bool | None = None
+    if branch.broj_enabled and branch.broj_face_enabled:
+        if not face_jpeg:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="이 지점은 회원가입 시 얼굴 사진이 필수입니다.",
+            )
+        try:
+            broj_id, broj_face_registered = (
+                broj_service.register_member_with_face_sync(
+                    name=data.name,
+                    phone=data.phone,
+                    address=data.address,
+                    gender=data.gender.value,
+                    birth_date=data.birth_date,
+                    motivation=data.motivation.value,
+                    referral=data.referral.value,
+                    agreed_marketing=data.agreed_marketing,
+                    face_jpeg=face_jpeg,
+                )
+            )
+        except broj_service.BrojSyncError as e:
+            logger.warning(
+                "브로제이 얼굴 등록 실패 → HiFIS 가입 차단: branch=%s, name=%s, error=%s",
+                branch.name, data.name, e,
+            )
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
+
     member = Member(
         branch_id=data.branch_id,
         membership_pass_id=data.membership_pass_id,
@@ -124,6 +158,8 @@ def create_member(
         signature_url=signature_url,
         dajim_id=dajim_id,
         dajim_face_registered=dajim_face_registered,
+        broj_id=broj_id,
+        broj_face_registered=broj_face_registered,
     )
     db.add(member)
     db.commit()
@@ -169,13 +205,12 @@ def create_member(
     # 외부 SaaS 자동 회원 등록 - 지점별 토글, BackgroundTasks 비동기, 실패해도 HiFIS 정상.
     # face_enabled 지점은 이미 위에서 sync 호출했으므로 여기선 스킵.
     if background_tasks is not None:
-        if branch.broj_enabled:
-            from app.services import broj as broj_service
+        if branch.broj_enabled and not branch.broj_face_enabled:
             background_tasks.add_task(broj_service.register_member, member)
         if (
             branch.dajim_enabled
             and branch.dajim_gym_id
-            and not branch.dajim_face_enabled  # 동광주처럼 얼굴 미강제 지점만 async
+            and not branch.dajim_face_enabled
         ):
             background_tasks.add_task(
                 dajim_service.register_member, member, branch.dajim_gym_id,

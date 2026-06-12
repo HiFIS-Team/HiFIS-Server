@@ -138,6 +138,16 @@ def mock_external_apis(monkeypatch):
         lambda member, gym_id: None,
         raising=False,
     )
+    # 브로제이 sync 등록 - 기본 성공 (실 API 호출 차단)
+    monkeypatch.setattr(
+        "app.services.broj.register_member_with_face_sync",
+        lambda **kw: ("broj-test-id", True),
+    )
+    monkeypatch.setattr(
+        "app.services.broj.register_member",
+        lambda member: None,
+        raising=False,
+    )
 
 
 # === 도메인 fixture (지점 / 관리자) ===
