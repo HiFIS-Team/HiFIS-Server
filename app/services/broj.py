@@ -24,6 +24,7 @@ _LOGIN_URL = "https://brojserver.broj.co.kr/BroJServer/joauth/login"
 _REGISTER_URL = "https://brojserver.broj.co.kr/BroJServer/api/jgroup/customer"
 _PROFILE_IMAGE_URL = "https://brojserver.broj.co.kr/BroJServer/api/jcustomer/profile-image/{jgjm_key}"
 _FACEID_ADD_URL = "https://brojserver.broj.co.kr/BroJServer/jmember/faceid/add"
+_DELETE_MEMBER_URL = "https://brojserver.broj.co.kr/BroJServer/v1/admin/groups/{jgroup_key}/group-members"
 
 _S3_BUCKET = "broj-contents"
 _S3_REGION = "ap-northeast-2"
@@ -294,6 +295,36 @@ def _patch_profile_image(
         )
 
 
+def _delete_member_sync(
+    client: httpx.Client, token: str, jgjm_key: str,
+) -> None:
+    """브로제이 회원 삭제 - face 등록 실패 시 cleanup용. best-effort.
+
+    실패해도 raise 안 함 (로그만). 호출자는 원래의 BrojSyncError를 그대로 던짐.
+    """
+    try:
+        resp = client.request(
+            "DELETE",
+            _DELETE_MEMBER_URL.format(jgroup_key=settings.BROJ_JGROUP_KEY),
+            json={"group_member_keys": [int(jgjm_key)]},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Broj-Jgroup-Access-Token": settings.BROJ_JGROUP_TOKEN,
+            },
+        )
+        if 200 <= resp.status_code < 300:
+            logger.info("브로제이 cleanup 삭제 성공: jgjm_key=%s", jgjm_key)
+        else:
+            logger.error(
+                "브로제이 cleanup 삭제 실패: jgjm_key=%s, status=%s, body=%s",
+                jgjm_key, resp.status_code, resp.text[:200],
+            )
+    except Exception as e:
+        logger.error(
+            "브로제이 cleanup 예외: jgjm_key=%s, error=%s", jgjm_key, e,
+        )
+
+
 def _register_face_sync(
     client: httpx.Client, token: str, jgjm_key: str, filename: str,
 ) -> None:
@@ -370,9 +401,14 @@ def register_member_with_face_sync(
         jgroup_key = settings.BROJ_JGROUP_KEY
 
         # 2. S3 PUT → 3. PATCH profile-image → 4. POST faceid/add
-        filename = _upload_face_to_s3(jgroup_key, jgjm_key, face_jpeg)
-        _patch_profile_image(client, token, jgjm_key, filename)
-        _register_face_sync(client, token, jgjm_key, filename)
+        # 실패 시 cleanup: 1번에서 만든 브로제이 회원 삭제 (orphan 방지)
+        try:
+            filename = _upload_face_to_s3(jgroup_key, jgjm_key, face_jpeg)
+            _patch_profile_image(client, token, jgjm_key, filename)
+            _register_face_sync(client, token, jgjm_key, filename)
+        except BrojSyncError:
+            _delete_member_sync(client, token, jgjm_key)
+            raise
 
         logger.info(
             "브로제이 동기 등록 완료: jgjm_key=%s, name=%s, phone=%s",
